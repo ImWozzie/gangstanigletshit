@@ -66,25 +66,42 @@ Staff tooling (e.g. `FustAdminESP2`) uses **`Highlight` + `workspace.FustESPOutl
 
 ---
 
-## Avoid (high risk) — aim & silent aim
+## Method audit — silent / aim / gather (2026-11-06 live client)
 
-These are **especially** likely to trip Fust after GunControl / server validation:
+Live flags: `ClientShield=true`, `ACM=true`, `AAEnabled=true`.
 
-| Technique | Why |
-|-----------|-----|
-| **True silent aim** — bullets hit without camera matching | Server/client compare aim origin, direction, and timing; mismatch flags. |
-| **Hooking `workspace:Raycast` / `FindPartOnRay`** for hit redirection | Stack / integrity checks; obvious tamper. LOS checks for *our* aim filter are fine; redirecting the game’s gun rays is not. |
-| **Hooking or wrapping `GunControl` fire functions** | `debug.info(n, "sf")` validates source paths; foreign callers fail Verdicts. |
-| **Spoofing shoot `FireServer` arguments** (direction, hit part, timestamp) | Server-side sanity + AC telemetry. |
-| **`hookmetamethod` on RemoteEvent** | Classic AC target; overlaps with AnimShield. |
-| **Instant snap > ~10–14° per frame** every shot | Statistical aim snaps vs input / camera delta. |
-| **Aim while not ADS** when the game expects ADS | Breaks expected input state machine (bundle defaults allow non-ADS; keep Require ADS on for lower profile). |
-| **Fighting `FustPad` `aimStep` every frame** | Two systems rotating camera = erratic signal. |
-| **Continuous `mousemoverel` aimlock** | Same Multihack class as gather mouse+click (2026-11-06 14:32). |
-| **Camera silent on LMB** | Same LookPitch / mouse fingerprint. Disabled in v2.6.4. |
-| **VirtualInput triggerbot** | Auto-click fingerprint. Disabled in v2.6.4. |
+### What the game actually wires
 
-**We do not ship true silent aim (Shoot spoof / ray redirect) or AC handshake bypass.** Scripts that “silently” hit without looking are spoofing remotes — out of scope here. Soft lock assist is opt-in, tiny, ADS+hold, off by default.
+| Pipe | Observed |
+|------|----------|
+| **`FustLook` → `LookPitch`** | ≥0.1s: quantised `asin(Camera.LookVector.Y)` (LookShared SCALE 90). Continuous look telemetry. |
+| **`FustCombat` → `Shoot`** | Bow/gun shot: `FireServer({ origin = cam.Pos + look*MUZZLE, dir = cam.LookVector, charge, shotId })`. **Dir is camera look.** |
+| **`FustGather` → `Swing`** | Melee: `castAim` from **viewport center** (camera ray). Weak hit if impact ≤2 studs of `WeakSpot`. |
+| **`GunControl` Verdicts** | `debug.info(n,"sf")` stack walk — foreign callers / hooks fail. |
+| **`MotionSync`** | `{lt}` lighting; `{xr…}` translucent near cam; `{tp,cm}` bad camera mode. |
+
+So “silent” (bullets/hits land where you are **not** looking) **requires** either (a) spoofing `dir`/`target` while LookPitch still reports real pitch, or (b) moving the camera (LookPitch / mouse fingerprint). There is no third client API that aims for you.
+
+### Ban scorecard (evidence-based)
+
+| Method | Ban? | Evidence |
+|--------|------|----------|
+| Instant `CFrame.lookAt` (gather / silent) | **YES Multihack** | Clean alt 14:17 |
+| `mousemoverel` + auto LMB (gather) | **YES Multihack** | Clean alt 14:32 |
+| Continuous aimlock `mousemoverel` | **YES likely** | Same mouse telemetry as 14:32; disabled/opt-in soft only in v2.6.4 |
+| Camera silent burst on LMB | **YES likely** | LookPitch discontinuities; disabled v2.6.4 |
+| VirtualInput triggerbot | **YES likely** | Same auto-click class as gather; disabled v2.6.4 |
+| Spoof `Shoot` `{dir,origin}` ≠ camera | **YES / worse** | Client sends cam look; LookPitch parallel; classic silent. **Not shipped.** |
+| Hook `Raycast` / GunControl / `__namecall` | **YES** | Verdicts + AnimShield |
+| Spoof `Swing` target/pos without look | **YES / worse** | Same as Shoot spoof; gather Multihack already |
+| Lighting Ambient/Brightness paint | **YES Cheating** | ACM `{lt}` 14:01 permanent |
+| Soft lock ≤2px @ ~18Hz, ADS+hold, opt-in | **Risky / unknown** | Softer than banned paths; **not proven safe** — alt only |
+| ESP PlayerGui only (no aim) | **Lower** | No LookPitch/Shoot mutation; still don’t stack with bans on same account |
+| Manual aim + ESP | **Safest we ship** | No automated look/click/remotes |
+
+**“There is a way” that other scripts use:** almost always **(spoof Shoot/Swing dir or hook fire)**. That is exactly the Multihack / Verdicts surface. We will not ship it. Anything that *looks* silent without spoofing is still moving your camera or mouse — and those two already Multihack’d clean alts today.
+
+**We do not ship true silent aim or AC handshake bypass.**
 
 ---
 
