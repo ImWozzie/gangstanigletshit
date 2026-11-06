@@ -568,100 +568,17 @@ return function(deps)
 
 	local miscTab = Window:Tab({ Name = "Misc", Icon = "wrench", Description = "Farming helpers" })
 	local farmSec = miscTab:Section({ Name = "Gather", Icon = "axe", Side = "Left" })
-	farmSec:Label("Aims at node <b>WeakSpot</b> via mouse / capped turn (not instant lookAt — LookPitch AC) then clicks. WeakSpots only on damaged nodes.")
+	farmSec:Label("<b>Auto red marks disabled.</b> Instant lookAt (14:17) and mouse-drive+auto-click (14:32) both got clean alts <b>Multihack</b> 10y. No Swing spoof. Do not re-enable.")
 	farmSec:Toggle({
-		Name = "Auto hit red marks",
-		Description = "Gradual aim + LMB — instant lookAt caused Multihack",
+		Name = "Auto hit red marks (disabled)",
+		Description = "No-op — kept so old configs do not crash",
 		Default = false,
 		Risky = true,
 		Flag = "Fust_AutoWeak",
-		Callback = function(v)
+		Callback = function()
 			if Misc then
-				Misc.autoWeak = v
+				Misc.autoWeak = false
 				Misc:syncBind()
-			end
-		end,
-	})
-	farmSec:Toggle({
-		Name = "Prime fresh nodes",
-		Description = "If no red mark nearby, tap an undamaged node once to spawn one",
-		Default = false,
-		Flag = "Fust_PrimeFresh",
-		DependsOn = "Fust_AutoWeak",
-		Callback = function(v)
-			if Misc then
-				Misc.primeFresh = v
-			end
-		end,
-	})
-	farmSec:Toggle({
-		Name = "Require held tool",
-		Description = "Only swing while a Tool is equipped",
-		Default = true,
-		Flag = "Fust_WeakNeedTool",
-		DependsOn = "Fust_AutoWeak",
-		Callback = function(v)
-			if Misc then
-				Misc.requireTool = v
-			end
-		end,
-	})
-	farmSec:Dropdown({
-		Name = "Node types",
-		Multi = true,
-		Default = { "tree", "stone", "metal", "sulfur" },
-		Options = { "tree", "stone", "metal", "sulfur" },
-		Flag = "Fust_WeakTypes",
-		DependsOn = "Fust_AutoWeak",
-		Callback = function(v)
-			if Misc and type(v) == "table" then
-				Misc:setNodeTypes(v)
-			end
-		end,
-	})
-	farmSec:Slider({
-		Name = "Gather range",
-		Min = 4,
-		Max = 12,
-		Default = 8.5,
-		Increment = 0.25,
-		Suffix = " st",
-		Flag = "Fust_WeakRange",
-		DependsOn = "Fust_AutoWeak",
-		Callback = function(v)
-			if Misc then
-				Misc.maxDist = v
-			end
-		end,
-	})
-	farmSec:Slider({
-		Name = "Swing cooldown",
-		Min = 200,
-		Max = 900,
-		Default = 420,
-		Increment = 10,
-		Suffix = " ms",
-		Flag = "Fust_WeakCd",
-		DependsOn = "Fust_AutoWeak",
-		Callback = function(v)
-			if Misc then
-				Misc.swingCooldownMs = v
-			end
-		end,
-	})
-	farmSec:Slider({
-		Name = "Aim deadzone",
-		Description = "Pixels from crosshair before click",
-		Min = 4,
-		Max = 40,
-		Default = 14,
-		Increment = 1,
-		Suffix = " px",
-		Flag = "Fust_WeakDead",
-		DependsOn = "Fust_AutoWeak",
-		Callback = function(v)
-			if Misc then
-				Misc.aimDeadzonePx = v
 			end
 		end,
 	})
