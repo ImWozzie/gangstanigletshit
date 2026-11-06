@@ -3,6 +3,7 @@ local PRISM_URL = "https://raw.githubusercontent.com/VortexHubScripts/TEST/refs/
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local LOCAL = Players.LocalPlayer
 
 local MAX_TARGETS = 12
@@ -487,6 +488,148 @@ function Esp:destroy()
 	cleanupOverlayGui()
 end
 
+-- ---------- Safe aim (camera only — no remote / raycast hooks) ----------
+local AIM_RENDER = "FustSafeAimAssist"
+
+local Aim = {
+	assistOn = false,
+	snapOn = false,
+	maxDist = 450,
+	fov = 5,
+	snapFov = 2.5,
+	strength = 0.12,
+	maxDegPerFrame = 0.65,
+	snapMaxDeg = 2.2,
+	bone = "Head",
+	bound = false,
+	inputConn = nil,
+}
+
+function Aim:isAds()
+	if LOCAL:GetAttribute("Dead") == true then
+		return false
+	end
+	return LOCAL:GetAttribute("FustAimGun") == true or LOCAL:GetAttribute("FustAimBow") == true
+end
+
+function Aim:aimPoint(char)
+	local p = char:FindFirstChild(self.bone) or char:FindFirstChild("Head") or char:FindFirstChild("UpperTorso")
+	if p and p:IsA("BasePart") then
+		return p.Position + Vector3.new(0, 0.08, 0)
+	end
+	return nil
+end
+
+function Aim:angleDeg(a, b)
+	return math.deg(math.acos(math.clamp(a:Dot(b), -1, 1)))
+end
+
+function Aim:pickTarget(cam, fovDeg)
+	local camPos = cam.CFrame.Position
+	local look = cam.CFrame.LookVector
+	local best
+	local bestAng = fovDeg
+	local maxD2 = self.maxDist * self.maxDist
+
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= LOCAL then
+			local char = plr.Character
+			local hum = char and char:FindFirstChildOfClass("Humanoid")
+			local root = char and char:FindFirstChild("HumanoidRootPart")
+			if hum and root and hum.Health > 0 then
+				local delta = root.Position - camPos
+				if delta.X * delta.X + delta.Y * delta.Y + delta.Z * delta.Z <= maxD2 then
+					local pt = self:aimPoint(char)
+					if pt then
+						local dir = (pt - camPos).Unit
+						local ang = self:angleDeg(look, dir)
+						if ang < bestAng then
+							bestAng = ang
+							best = pt
+						end
+					end
+				end
+			end
+		end
+	end
+	return best
+end
+
+function Aim:rotateToward(cam, worldPos, strength, capDeg)
+	local camPos = cam.CFrame.Position
+	local look = cam.CFrame.LookVector
+	local want = (worldPos - camPos).Unit
+	local ang = self:angleDeg(look, want)
+	if ang < 0.05 then
+		return
+	end
+	local step = math.min(capDeg, ang) * math.clamp(strength, 0.02, 1)
+	local t = step / math.max(ang, 0.001)
+	local newLook = look:Lerp(want, t).Unit
+	cam.CFrame = CFrame.lookAt(camPos, camPos + newLook)
+end
+
+function Aim:syncBind()
+	if self.assistOn or self.snapOn then
+		self:bind()
+	else
+		self:unbind()
+	end
+end
+
+function Aim:bind()
+	if self.bound then
+		return
+	end
+	self.bound = true
+	RunService:BindToRenderStep(AIM_RENDER, Enum.RenderPriority.Camera.Value + 1, function()
+		if not self.assistOn or not self:isAds() then
+			return
+		end
+		local cam = workspace.CurrentCamera
+		if not cam then
+			return
+		end
+		local pt = self:pickTarget(cam, self.fov)
+		if pt then
+			self:rotateToward(cam, pt, self.strength, self.maxDegPerFrame)
+		end
+	end)
+	self.inputConn = UserInputService.InputBegan:Connect(function(input, processed)
+		if processed or not self.snapOn or not self:isAds() then
+			return
+		end
+		if input.UserInputType ~= Enum.UserInputType.MouseButton1 then
+			return
+		end
+		local cam = workspace.CurrentCamera
+		if not cam then
+			return
+		end
+		local pt = self:pickTarget(cam, self.snapFov)
+		if pt then
+			self:rotateToward(cam, pt, 0.85, self.snapMaxDeg)
+		end
+	end)
+end
+
+function Aim:unbind()
+	pcall(function()
+		RunService:UnbindFromRenderStep(AIM_RENDER)
+	end)
+	if self.inputConn then
+		self.inputConn:Disconnect()
+		self.inputConn = nil
+	end
+	self.bound = false
+end
+
+function Aim:destroy()
+	self.assistOn = false
+	self.snapOn = false
+	self:unbind()
+end
+
 -- ---------- UI ----------
 cleanupOverlayGui()
 
@@ -499,10 +642,10 @@ end
 
 local Window = Prism:CreateWindow({
 	Title = "Fust",
-	Subtitle = "visuals",
+	Subtitle = "visuals + aim",
 	Intro = false,
 	ToggleKey = Enum.KeyCode.RightControl,
-	Size = Vector2.new(580, 460),
+	Size = Vector2.new(580, 520),
 })
 
 local espTab = Window:Tab({ Name = "ESP", Icon = "eye", Description = "Player overlays" })
@@ -599,6 +742,101 @@ featSec:ColorPicker({
 	end,
 })
 
+local aimTab = Window:Tab({ Name = "Aim", Icon = "crosshair", Description = "Camera-only (no hooks)" })
+
+local aimWarn = aimTab:Section({ Name = "Read first", Icon = "alert-triangle", Side = "Left" })
+aimWarn:Label("True silent aim (hooking GunControl / shoot remotes) is <b>not</b> included. Fust validates call stacks via debug.info. Snap-on-shot only nudges your camera on LMB inside a tight FOV.")
+
+local aimMain = aimTab:Section({ Name = "Aim assist", Icon = "target", Side = "Left" })
+
+aimMain:Toggle({
+	Name = "Sticky assist",
+	Description = "Soft pull while ADS (FustAimGun / Bow)",
+	Default = false,
+	Flag = "Fust_AimAssist",
+	Callback = function(v)
+		Aim.assistOn = v
+		Aim:syncBind()
+	end,
+})
+
+aimMain:Slider({
+	Name = "Assist FOV",
+	Min = 1,
+	Max = 12,
+	Default = 5,
+	Increment = 0.5,
+	Suffix = "°",
+	Flag = "Fust_AimFov",
+	Callback = function(v)
+		Aim.fov = v
+	end,
+})
+
+aimMain:Slider({
+	Name = "Assist strength",
+	Min = 0.05,
+	Max = 0.35,
+	Default = 0.12,
+	Increment = 0.01,
+	Flag = "Fust_AimStr",
+	Callback = function(v)
+		Aim.strength = v
+	end,
+})
+
+local snapSec = aimTab:Section({ Name = "Snap on shot", Icon = "zap", Side = "Left" })
+
+snapSec:Toggle({
+	Name = "Snap on LMB",
+	Description = "Riskier: tiny camera snap when firing inside tight FOV — not true silent",
+	Default = false,
+	Risky = true,
+	Flag = "Fust_AimSnap",
+	Callback = function(v)
+		Aim.snapOn = v
+		Aim:syncBind()
+	end,
+})
+
+snapSec:Slider({
+	Name = "Snap FOV",
+	Min = 0.5,
+	Max = 6,
+	Default = 2.5,
+	Increment = 0.25,
+	Suffix = "°",
+	Flag = "Fust_SnapFov",
+	Callback = function(v)
+		Aim.snapFov = v
+	end,
+})
+
+local aimTune = aimTab:Section({ Name = "Targeting", Icon = "settings", Side = "Right" })
+
+aimTune:Slider({
+	Name = "Max target distance",
+	Min = 50,
+	Max = 1200,
+	Default = 450,
+	Increment = 25,
+	Suffix = " st",
+	Flag = "Fust_AimDist",
+	Callback = function(v)
+		Aim.maxDist = v
+	end,
+})
+
+aimTune:Dropdown({
+	Name = "Aim bone",
+	Default = "Head",
+	Flag = "Fust_AimBone",
+	Options = { "Head", "UpperTorso", "HumanoidRootPart" },
+	Callback = function(v)
+		Aim.bone = v
+	end,
+})
+
 local sysSec = espTab:Section({ Name = "Script", Icon = "power", Side = "Right" })
 
 sysSec:Button({
@@ -613,6 +851,7 @@ sysSec:Button({
 })
 
 Window:OnUnload(function()
+	Aim:destroy()
 	Esp:destroy()
 end)
 
@@ -620,3 +859,4 @@ Esp:ensureGui()
 
 local env = (getgenv and getgenv()) or _G
 env.__FustEsp = Esp
+env.__FustAim = Aim
