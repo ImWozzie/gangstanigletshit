@@ -9,6 +9,17 @@
 
 local MANIFEST_URL = "https://raw.githubusercontent.com/ImWozzie/gangstanigletshit/main/manifest.luau"
 
+local DEFAULT_MANIFEST = {
+	repo = "ImWozzie/gangstanigletshit",
+	branch = "main",
+	modules = {
+		prism = "modules/prism_ui.luau",
+		esp = "modules/fust_esp.luau",
+		aim = "modules/fust_aim.luau",
+		shell = "modules/fust_shell.luau",
+	},
+}
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -48,11 +59,11 @@ local function loadModule(repo, branch, path, label)
 	return loadChunk(body, label or path)
 end
 
+local manifest = DEFAULT_MANIFEST
 local manifestSource = httpGet(MANIFEST_URL)
-if not manifestSource then
-	error("[FustBundle] Could not fetch manifest: " .. MANIFEST_URL)
+if manifestSource and not string.find(manifestSource, "404", 1, true) and string.find(manifestSource, "return", 1, true) then
+	manifest = loadChunk(manifestSource, "manifest")
 end
-local manifest = loadChunk(manifestSource, "manifest")
 
 local repo = manifest.repo
 local branch = manifest.branch
