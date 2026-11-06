@@ -4,7 +4,7 @@ return function(deps)
 	local Esp = deps.Esp
 	local Aim = deps.Aim
 	local World = deps.World
-	local bundleVersion = deps.BundleVersion or "2.4.7"
+	local bundleVersion = deps.BundleVersion or "2.4.8"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false
