@@ -4,7 +4,7 @@ return function(deps)
 	local Esp = deps.Esp
 	local Aim = deps.Aim
 	local World = deps.World
-	local bundleVersion = deps.BundleVersion or "2.4.1"
+	local bundleVersion = deps.BundleVersion or "2.4.2"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false
@@ -100,6 +100,24 @@ return function(deps)
 	visSec:Toggle({ Name = "Distance", Default = true, Flag = "Fust_EspDist", Callback = function(v)
 		Esp.distance = v
 	end })
+	visSec:Toggle({
+		Name = "Held weapon",
+		Description = "Tool.Name (+ skin) under the box — no Items require",
+		Default = true,
+		Flag = "Fust_EspHeld",
+		Callback = function(v)
+			Esp.held = v
+		end,
+	})
+	visSec:Toggle({
+		Name = "Armour",
+		Description = "Unique FustWear ItemIds under the box",
+		Default = false,
+		Flag = "Fust_EspArmor",
+		Callback = function(v)
+			Esp.armor = v
+		end,
+	})
 	visSec:Toggle({ Name = "Health bar", Description = "Colour shifts green to red", Default = true, Flag = "Fust_EspHpBar", Callback = function(v)
 		Esp.healthBar = v
 	end })
@@ -576,6 +594,79 @@ return function(deps)
 		end,
 	})
 
+	-- Panic: flip every active/reportable feature off at once. Flips the Prism
+	-- flags (not just the Aim fields) so the UI reflects it. Passive ESP and the
+	-- camera-grade fullbright stay on — they do not touch the AC.
+	local RISKY_FLAGS = {
+		"Fust_AimOn",
+		"Fust_SilentOn",
+		"Fust_TrigOn",
+		"Fust_TimeOn",
+		"Fust_Battle",
+		"Fust_AimKey1",
+		"Fust_AimKey2",
+		"Fust_TrigKey",
+	}
+
+	local function panic()
+		for _, flag in ipairs(RISKY_FLAGS) do
+			local el = Prism.Flags[flag]
+			if el and el.Set then
+				pcall(function()
+					el:Set(false)
+				end)
+			end
+		end
+		-- Belt and braces: force the module off even if a flag is missing.
+		Aim.aimbotEnabled = false
+		Aim.silentOn = false
+		Aim.triggerEnabled = false
+		Aim.battleMode = false
+		Aim.aimKey1Held = false
+		Aim.aimKey2Held = false
+		Aim.triggerKeyHeld = false
+		Aim.firingSilent = false
+		Aim:syncBind()
+		if World then
+			World.timeControlOn = false
+			World:sync()
+		end
+		pcall(function()
+			Prism:Notify({
+				Title = "Panic",
+				Content = "Aimbot, silent, triggerbot and time changer are off.",
+				Type = "Warning",
+				Duration = 4,
+			})
+		end)
+	end
+
+	local safeSec = aimTab:Section({ Name = "Safety", Icon = "shield", Side = "Right" })
+	safeSec:Label("Panic kills aimbot, silent, trigger and time changer instantly. ESP + camera fullbright stay on (they don't touch the AC).")
+	safeSec:Button({
+		Name = "Panic now",
+		Description = "Disable everything risky",
+		Icon = "shield-off",
+		Callback = panic,
+	})
+	safeSec:Toggle({
+		Name = "Panic key",
+		Description = "Click the key chip to bind — tap to kill risky features",
+		Default = false,
+		Flag = "Fust_PanicKey",
+		Mode = "Toggle",
+		Keybind = Enum.KeyCode.Delete,
+		Callback = function(v)
+			if v then
+				panic()
+				local el = Prism.Flags.Fust_PanicKey
+				if el and el.Set then
+					el:Set(false, true)
+				end
+			end
+		end,
+	})
+
 	local sysSec = espTab:Section({ Name = "Script", Icon = "power", Side = "Right" })
 	sysSec:Label("Version: " .. bundleVersion .. " — use Refresh if Aimbot tab looks old")
 	sysSec:Button({
@@ -622,7 +713,9 @@ return function(deps)
 
 	bundle.Window = Window
 	bundle.Esp = Esp
+	bundle.Aim = Aim
 	bundle.World = World
+	bundle.panic = panic
 
 	return bundle
 end

@@ -80,6 +80,8 @@ return function(deps)
 		skelDist = 400,
 		name = true,
 		distance = true,
+		held = true,
+		armor = false,
 		healthBar = true,
 		healthBarMaxDist = 50,
 		healthText = false,
@@ -197,6 +199,8 @@ return function(deps)
 		s.barFill = makeFrame(3)
 		s.barFill.f.AnchorPoint = Vector2.new(0, 1)
 		s.label = makeText()
+		s.heldLabel = makeText()
+		s.heldLabel.f.TextSize = 11
 		slots[i] = s
 		return s
 	end
@@ -216,6 +220,7 @@ return function(deps)
 		setVis(s.barBg, false)
 		setVis(s.barFill, false)
 		setVis(s.label, false)
+		setVis(s.heldLabel, false)
 	end
 
 	local function hideAll()
@@ -301,7 +306,45 @@ return function(deps)
 	end
 
 	local function shouldRun()
-		return Esp.master and (Esp.box or Esp.skeleton or Esp.name or Esp.distance or Esp.healthBar or Esp.healthText)
+		return Esp.master
+			and (Esp.box or Esp.skeleton or Esp.name or Esp.distance or Esp.held or Esp.armor or Esp.healthBar or Esp.healthText)
+	end
+
+	-- Tool.Name is already the display name (knowledge.md). Optional WSkin suffix.
+	local function heldText(char)
+		local tool = char:FindFirstChildOfClass("Tool")
+		if not tool then
+			return nil
+		end
+		local skin = tool:GetAttribute("WSkin")
+		if type(skin) == "string" and skin ~= "" and skin ~= "none" then
+			return tool.Name .. " · " .. skin
+		end
+		return tool.Name
+	end
+
+	-- Unique FustWear ItemIds → short readable list (no require of Fust.Items).
+	local function armorText(char)
+		local wear = char:FindFirstChild("FustWear")
+		if not wear then
+			return nil
+		end
+		local seen, parts = {}, {}
+		for _, child in ipairs(wear:GetChildren()) do
+			local id = child:GetAttribute("ItemId")
+			if type(id) == "string" and id ~= "" and not seen[id] then
+				seen[id] = true
+				parts[#parts + 1] = id:gsub("_", " ")
+			end
+		end
+		if #parts == 0 then
+			return nil
+		end
+		table.sort(parts)
+		if #parts > 2 then
+			return parts[1] .. " · " .. parts[2] .. " +" .. (#parts - 2)
+		end
+		return table.concat(parts, " · ")
 	end
 
 	local function hpColor(pct)
@@ -314,6 +357,8 @@ return function(deps)
 		for _, t in ipairs(targets) do
 			t.cache = partsFor(t.char)
 			t.dist = math.sqrt(t.d2)
+			t.held = Esp.held and heldText(t.char) or nil
+			t.armor = Esp.armor and armorText(t.char) or nil
 		end
 	end
 
@@ -527,6 +572,32 @@ return function(deps)
 					setVis(lab, true)
 				else
 					setVis(s.label, false)
+				end
+
+				-- Held weapon / armour under the box (from Tool + FustWear — no module require).
+				local subChunks = {}
+				if Esp.held and t.held then
+					subChunks[#subChunks + 1] = t.held
+				end
+				if Esp.armor and t.armor then
+					subChunks[#subChunks + 1] = t.armor
+				end
+				if #subChunks > 0 then
+					local sub = s.heldLabel
+					local subKey = table.concat(subChunks, "|")
+					if sub.key ~= subKey then
+						sub.key = subKey
+						sub.f.Text = table.concat(subChunks, "  ·  ")
+					end
+					local subCol = Esp.held and t.held and Color3.fromRGB(255, 210, 120) or color
+					if sub.col ~= subCol then
+						sub.col = subCol
+						sub.f.TextColor3 = subCol
+					end
+					setRect(sub, cx, y1 + 2, 240, 14)
+					setVis(sub, true)
+				else
+					setVis(s.heldLabel, false)
 				end
 			end
 		end
