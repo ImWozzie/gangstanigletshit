@@ -203,12 +203,45 @@ return function(deps)
 		end,
 	})
 
-	local snapSec = aimTab:Section({ Name = "Snap on shot", Icon = "zap", Side = "Left" })
+	local snapSec = aimTab:Section({ Name = "Silent / snap", Icon = "zap", Side = "Left" })
 	snapSec:Toggle({
-		Name = "Snap on LMB",
-		Description = "Riskier: tiny camera snap when firing inside tight FOV — not true silent",
+		Name = "Silent (camera)",
+		Description = "Stronger snap on LMB inside silent FOV — not bullet redirect",
 		Default = false,
 		Risky = true,
+		Flag = "Fust_SilentOn",
+		Callback = function(v)
+			Aim.silentOn = v
+			Aim:syncBind()
+		end,
+	})
+	snapSec:Slider({
+		Name = "Silent FOV",
+		Min = 0.5,
+		Max = 10,
+		Default = 3.5,
+		Increment = 0.25,
+		Suffix = "°",
+		Flag = "Fust_SilentFov",
+		Callback = function(v)
+			Aim.silentFov = v
+		end,
+	})
+	snapSec:Slider({
+		Name = "Silent strength",
+		Min = 0.4,
+		Max = 1,
+		Default = 0.92,
+		Increment = 0.05,
+		Flag = "Fust_SilentStr",
+		Callback = function(v)
+			Aim.silentStrength = v
+		end,
+	})
+	snapSec:Toggle({
+		Name = "Legacy snap",
+		Description = "Small single snap on LMB",
+		Default = false,
 		Flag = "Fust_AimSnap",
 		Callback = function(v)
 			Aim.snapOn = v
@@ -216,7 +249,7 @@ return function(deps)
 		end,
 	})
 	snapSec:Slider({
-		Name = "Snap FOV",
+		Name = "Legacy snap FOV",
 		Min = 0.5,
 		Max = 6,
 		Default = 2.5,
@@ -228,7 +261,73 @@ return function(deps)
 		end,
 	})
 
+	local visSec = aimTab:Section({ Name = "Crosshair & FOV", Icon = "scan", Side = "Right" })
+	visSec:Toggle({
+		Name = "Crosshair",
+		Default = true,
+		Flag = "Fust_CrossOn",
+		Callback = function(v)
+			Aim.showCrosshair = v
+			Aim:syncBind()
+		end,
+	})
+	visSec:Toggle({
+		Name = "FOV circle",
+		Default = true,
+		Flag = "Fust_FovRing",
+		Callback = function(v)
+			Aim.showFov = v
+			Aim:syncBind()
+		end,
+	})
+	visSec:Slider({
+		Name = "FOV circle size",
+		Description = "Visual ring (degrees)",
+		Min = 2,
+		Max = 25,
+		Default = 8,
+		Increment = 0.5,
+		Suffix = "°",
+		Flag = "Fust_FovVis",
+		Callback = function(v)
+			Aim.fovVisualDeg = v
+		end,
+	})
+	visSec:Slider({
+		Name = "Cross size",
+		Min = 6,
+		Max = 22,
+		Default = 10,
+		Increment = 1,
+		Flag = "Fust_CrossSize",
+		Callback = function(v)
+			Aim.crossSize = v
+			Aim:destroyCrosshair()
+			if Aim.showCrosshair or Aim.showFov then
+				Aim:ensureCrosshair()
+			end
+		end,
+	})
+	visSec:ColorPicker({
+		Name = "Crosshair colour",
+		Default = Color3.fromRGB(240, 240, 245),
+		Flag = "Fust_CrossCol",
+		Callback = function(c)
+			Aim.crossColor = c
+			Aim.fovRingColor = c
+		end,
+	})
+
 	local aimTune = aimTab:Section({ Name = "Targeting", Icon = "settings", Side = "Right" })
+	aimTune:Toggle({
+		Name = "Require ADS",
+		Description = "Only aim when FustAimGun / Bow is active",
+		Default = true,
+		Flag = "Fust_AimAds",
+		Callback = function(v)
+			Aim.requireAds = v
+		end,
+	})
 	aimTune:Slider({
 		Name = "Max target distance",
 		Min = 50,
