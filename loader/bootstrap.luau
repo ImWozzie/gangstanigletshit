@@ -7,7 +7,7 @@
   Re-run to refresh all modules from GitHub. Update only esp/aim/shell/prism on GitHub independently.
 ]]
 
-local BUNDLE_VERSION = "2.3.0"
+local BUNDLE_VERSION = "2.3.1"
 
 local MANIFEST_URL = "https://raw.githubusercontent.com/ImWozzie/gangstanigletshit/main/manifest.luau"
 
@@ -18,6 +18,7 @@ local DEFAULT_MANIFEST = {
 		prism = "modules/prism_ui.luau",
 		esp = "modules/fust_esp.luau",
 		aim = "modules/fust_aim.luau",
+		world = "modules/fust_world.luau",
 		shell = "modules/fust_shell.luau",
 	},
 }
@@ -95,18 +96,22 @@ deps.Prism = Prism
 
 local espFactory = loadModule(repo, branch, paths.esp, "esp")
 local aimFactory = loadModule(repo, branch, paths.aim, "aim")
+local worldFactory = paths.world and loadModule(repo, branch, paths.world, "world") or nil
 local shellFactory = loadModule(repo, branch, paths.shell, "shell")
 
 local Esp = espFactory(deps)
 local Aim = aimFactory(deps)
+local World = worldFactory and worldFactory(deps) or { destroy = function() end, sync = function() end }
 deps.Esp = Esp
 deps.Aim = Aim
+deps.World = World
 
 local bundle = shellFactory(deps)
 
 env.__PrismLibrary = Prism
 env.__FustEsp = Esp
 env.__FustAim = Aim
+env.__FustWorld = World
 env.__FustBundle = bundle
 env.__FustManifest = manifest
 env.__FustBundleVersion = BUNDLE_VERSION

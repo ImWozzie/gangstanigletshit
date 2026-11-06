@@ -43,10 +43,12 @@ return function(deps)
 		aimKey2Held = false,
 		aimKey1 = Enum.KeyCode.B,
 		aimKey2 = nil,
-		requireHoldKey = true,
+		requireHoldKey = false,
 		lockCapDeg = 6.5,
 		battleMode = false,
-		requireAds = true,
+		requireAds = false,
+		useMouseDrive = true,
+		mouseDriveStrength = 0.22,
 		showCrosshair = true,
 		visualCheck = false,
 		crossSize = 10,
@@ -84,7 +86,17 @@ return function(deps)
 		if LOCAL:GetAttribute("Dead") == true then
 			return false
 		end
-		return LOCAL:GetAttribute("FustAimGun") == true or LOCAL:GetAttribute("FustAimBow") == true
+		if LOCAL:GetAttribute("FustAimGun") == true or LOCAL:GetAttribute("FustAimBow") == true then
+			return true
+		end
+		local char = LOCAL.Character
+		if char then
+			local tool = char:FindFirstChildOfClass("Tool")
+			if tool and (tool:GetAttribute("FustGun") == true or tool:GetAttribute("Gun") == true) then
+				return true
+			end
+		end
+		return UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
 	end
 
 	function Aim:canAim()
@@ -146,10 +158,6 @@ return function(deps)
 		if hum:GetAttribute("Downed") == true or char:GetAttribute("Downed") == true then
 			return true
 		end
-		local st = hum:GetState()
-		if st == Enum.HumanoidStateType.Dead then
-			return true
-		end
 		return false
 	end
 
@@ -175,9 +183,9 @@ return function(deps)
 		end
 		local params = RaycastParams.new()
 		params.FilterType = Enum.RaycastFilterType.Exclude
-		local ignore = { LOCAL.Character, cam }
-		if char then
-			table.insert(ignore, char)
+		local ignore = {}
+		if LOCAL.Character then
+			table.insert(ignore, LOCAL.Character)
 		end
 		params.FilterDescendantsInstances = ignore
 		local hit = workspace:Raycast(from, dir.Unit * dist, params)
@@ -302,6 +310,9 @@ return function(deps)
 	end
 
 	function Aim:rotateToward(cam, worldPos, capDeg)
+		if self.useMouseDrive then
+			return self:mouseDriveToward(cam, worldPos)
+		end
 		local camPos = cam.CFrame.Position
 		local look = cam.CFrame.LookVector
 		local want = (worldPos - camPos).Unit
@@ -322,6 +333,37 @@ return function(deps)
 		local newLook = look:Lerp(want, t).Unit
 		cam.CFrame = CFrame.lookAt(camPos, camPos + newLook)
 		return ang < 0.2
+	end
+
+	function Aim:mouseDriveToward(cam, worldPos)
+		local sp, on = cam:WorldToViewportPoint(worldPos)
+		if not on or sp.Z <= 0 then
+			return false
+		end
+		local cx, cy = cam.ViewportSize.X * 0.5, cam.ViewportSize.Y * 0.5
+		local dx, dy = sp.X - cx, sp.Y - cy
+		local dist = math.sqrt(dx * dx + dy * dy)
+		if dist <= self.deadzonePx then
+			return true
+		end
+		local factor = self.mouseDriveStrength * self:smoothingStrength()
+		if self.aimbotEnabled and self:aimKeysHeld() then
+			factor = math.clamp(factor * 2.5, 0.08, 0.55)
+		end
+		local mx = dx * factor
+		local my = dy * factor
+		local moved = false
+		if type(mousemoverel) == "function" then
+			mousemoverel(mx, my)
+			moved = true
+		else
+			pcall(function()
+				local vim = game:GetService("VirtualInputManager")
+				vim:SendMouseMoveEvent(cx + mx, cy + my, game)
+				moved = true
+			end)
+		end
+		return moved
 	end
 
 	function Aim:fovRadiusPx(cam, px)
@@ -470,13 +512,13 @@ return function(deps)
 				local pt, ch = self:pickTarget(cam, self.weaponFovPx, self.targetBones, self.stickyChar)
 				statusLabel.Visible = true
 				statusLabel.Text = string.format(
-					"Aim:%s key:%s vis:%s | tgt:%s silent:%s trig:%s",
+					"Aim:%s key:%s vis:%s | tgt:%s ads:%s mouse:%s",
 					self.aimbotEnabled and "on" or "off",
 					self:aimKeysHeld() and "hold" or "—",
 					self.visibleCheck and "on" or "off",
 					pt and (ch and ch.Name or "?") or "none",
-					self.silentOn and "on" or "off",
-					self.triggerEnabled and "on" or "off"
+					self:canAim() and "yes" or "no",
+					self.useMouseDrive and "on" or "off"
 				)
 			else
 				statusLabel.Visible = false
@@ -535,6 +577,9 @@ return function(deps)
 
 	function Aim:syncBind()
 		if isActive() then
+			if self.bound then
+				self:unbind()
+			end
 			self:bind()
 		else
 			self:unbind()
@@ -550,7 +595,7 @@ return function(deps)
 			self:ensureCrosshair()
 		end
 
-		RunService:BindToRenderStep(AIM_RENDER, Enum.RenderPriority.Last.Value, function(dt)
+		RunService:BindToRenderStep(AIM_RENDER, Enum.RenderPriority.Camera.Value + 5, function(dt)
 			local cam = workspace.CurrentCamera
 			if not cam then
 				return
