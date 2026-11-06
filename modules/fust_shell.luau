@@ -3,7 +3,7 @@ return function(deps)
 	local Prism = deps.Prism
 	local Esp = deps.Esp
 	local Aim = deps.Aim
-	local bundleVersion = deps.BundleVersion or "2.2.1"
+	local bundleVersion = deps.BundleVersion or "2.2.2"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false

@@ -7,7 +7,7 @@
   Re-run to refresh all modules from GitHub. Update only esp/aim/shell/prism on GitHub independently.
 ]]
 
-local BUNDLE_VERSION = "2.2.1"
+local BUNDLE_VERSION = "2.2.2"
 
 local MANIFEST_URL = "https://raw.githubusercontent.com/ImWozzie/gangstanigletshit/main/manifest.luau"
 
@@ -62,7 +62,7 @@ local function loadModule(repo, branch, path, label)
 end
 
 local manifest = DEFAULT_MANIFEST
-local manifestSource = httpGet(MANIFEST_URL)
+local manifestSource = httpGet(MANIFEST_URL .. "?v=" .. BUNDLE_VERSION)
 if manifestSource and not string.find(manifestSource, "404", 1, true) and string.find(manifestSource, "return", 1, true) then
 	manifest = loadChunk(manifestSource, "manifest")
 end
