@@ -4,7 +4,7 @@ return function(deps)
 	local Esp = deps.Esp
 	local Aim = deps.Aim
 	local World = deps.World
-	local bundleVersion = deps.BundleVersion or "2.4.5"
+	local bundleVersion = deps.BundleVersion or "2.4.6"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false
@@ -553,29 +553,14 @@ return function(deps)
 	})
 	lightSec:Slider({
 		Name = "Light brightness",
-		Min = 1,
-		Max = 20,
-		Default = 8,
+		Description = "PointLight strength (engine range capped at 120 — we use a light ring)",
+		Min = 2,
+		Max = 30,
+		Default = 12,
 		Increment = 0.5,
-		Flag = "Fust_FbBright",
+		Flag = "Fust_FbLightBright",
 		Callback = function(v)
 			World.brightness = v
-			if World.fullbrightOn then
-				World:sync()
-			end
-		end,
-	})
-	lightSec:Slider({
-		Name = "Light range",
-		Description = "How far the lights reach (studs)",
-		Min = 100,
-		Max = 2000,
-		Default = 500,
-		Increment = 25,
-		Suffix = " st",
-		Flag = "Fust_FbRange",
-		Callback = function(v)
-			World.range = v
 			if World.fullbrightOn then
 				World:sync()
 			end

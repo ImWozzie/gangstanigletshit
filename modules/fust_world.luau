@@ -1,19 +1,32 @@
 -- Client visuals / time. factory(deps) -> World
--- FustSky reports when Lighting Ambient / Brightness / Exposure / thin Atmosphere
--- end up brighter than it wants — so fullbright uses local PointLights on a
--- camera-follow part (real illumination) instead of writing Lighting.
+-- FustSky reports Lighting Ambient/Brightness/Exposure rises, so fullbright does
+-- not write Lighting. Roblox clamps PointLight.Range to 120 — a ring of lights
+-- around the camera covers a much larger volume with real illumination.
 return function(deps)
 	local Lighting = game:GetService("Lighting")
 	local RunService = deps.RunService
 
+	local RING = {
+		Vector3.new(0, 0, 0),
+		Vector3.new(90, 0, 0),
+		Vector3.new(-90, 0, 0),
+		Vector3.new(0, 0, 90),
+		Vector3.new(0, 0, -90),
+		Vector3.new(0, 50, 0),
+		Vector3.new(0, -20, 0),
+		Vector3.new(70, 30, 70),
+		Vector3.new(-70, 30, -70),
+		Vector3.new(70, 30, -70),
+		Vector3.new(-70, 30, 70),
+	}
+
 	local World = {
 		fullbrightOn = false,
-		brightness = 8,
-		range = 500,
+		brightness = 12,
 		timeControlOn = false,
 		clockTime = 14,
-		lightPart = nil,
-		lights = {},
+		folder = nil,
+		anchors = {},
 		followConn = nil,
 		camConn = nil,
 		timeConn = nil,
@@ -28,76 +41,68 @@ return function(deps)
 			World.camConn:Disconnect()
 			World.camConn = nil
 		end
-		if World.lightPart then
-			World.lightPart:Destroy()
-			World.lightPart = nil
+		if World.folder then
+			World.folder:Destroy()
+			World.folder = nil
 		end
-		table.clear(World.lights)
+		table.clear(World.anchors)
 	end
 
 	local function ensureLights()
-		if World.lightPart and World.lightPart.Parent then
+		if World.folder and World.folder.Parent then
 			return
 		end
 		destroyLights()
 
-		local part = Instance.new("Part")
-		part.Name = "FustFBAnchor"
-		part.Anchored = true
-		part.CanCollide = false
-		part.CanQuery = false
-		part.CanTouch = false
-		part.CastShadow = false
-		part.Transparency = 1
-		part.Size = Vector3.new(0.2, 0.2, 0.2)
-		part.Parent = workspace.CurrentCamera or workspace
-		World.lightPart = part
+		local folder = Instance.new("Folder")
+		folder.Name = "FustFBLights"
+		folder.Parent = workspace.CurrentCamera or workspace
+		World.folder = folder
 
-		local function addPoint(name, brightnessScale, rangeScale)
+		for i, offset in ipairs(RING) do
+			local part = Instance.new("Part")
+			part.Name = "FB" .. i
+			part.Anchored = true
+			part.CanCollide = false
+			part.CanQuery = false
+			part.CanTouch = false
+			part.CastShadow = false
+			part.Transparency = 1
+			part.Size = Vector3.new(0.2, 0.2, 0.2)
+			part.Parent = folder
+
 			local light = Instance.new("PointLight")
-			light.Name = name
+			light.Name = "Light"
 			light.Shadows = false
 			light.Color = Color3.new(1, 1, 1)
-			light.Brightness = World.brightness * brightnessScale
-			light.Range = World.range * rangeScale
+			light.Brightness = World.brightness
+			light.Range = 120
 			light.Parent = part
-			World.lights[#World.lights + 1] = light
-			return light
-		end
 
-		-- Three overlapping lights so mid/far geometry actually gets lit.
-		addPoint("Near", 1.1, 0.45)
-		addPoint("Mid", 0.85, 0.85)
-		addPoint("Far", 0.55, 1.25)
+			World.anchors[#World.anchors + 1] = { part = part, light = light, offset = offset }
+		end
 
 		World.followConn = RunService.RenderStepped:Connect(function()
 			local cam = workspace.CurrentCamera
-			local anchor = World.lightPart
-			if not cam or not anchor then
+			local fold = World.folder
+			if not cam or not fold then
 				return
 			end
-			if anchor.Parent ~= cam then
-				anchor.Parent = cam
+			if fold.Parent ~= cam then
+				fold.Parent = cam
 			end
-			anchor.CFrame = cam.CFrame
+			local cf = cam.CFrame
+			for _, a in ipairs(World.anchors) do
+				a.part.CFrame = cf * CFrame.new(a.offset)
+			end
 		end)
 
 		World.camConn = workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
 			local cam = workspace.CurrentCamera
-			if cam and World.lightPart then
-				World.lightPart.Parent = cam
+			if cam and World.folder then
+				World.folder.Parent = cam
 			end
 		end)
-	end
-
-	local function tuneLights()
-		for i, light in ipairs(World.lights) do
-			local scaleB = (i == 1 and 1.1) or (i == 2 and 0.85) or 0.55
-			local scaleR = (i == 1 and 0.45) or (i == 2 and 0.85) or 1.25
-			light.Brightness = World.brightness * scaleB
-			light.Range = World.range * scaleR
-			light.Enabled = true
-		end
 	end
 
 	function World:applyFullbright()
@@ -106,7 +111,12 @@ return function(deps)
 			return
 		end
 		ensureLights()
-		tuneLights()
+		local b = math.clamp(self.brightness, 0.5, 40)
+		for _, a in ipairs(self.anchors) do
+			a.light.Brightness = b
+			a.light.Range = 120
+			a.light.Enabled = true
+		end
 	end
 
 	function World:applyTime()
