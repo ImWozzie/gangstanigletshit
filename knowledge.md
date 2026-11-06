@@ -53,7 +53,7 @@ Character attributes:
 | `Loot` | `LootBarrel` (`Variant` blue/red, `Hp/MaxHp`), `LootCrate` and `MilitaryCrate` (`CrateKind` wooden/military, `Open`) | |
 | `WorldItems` | Dropped items (`Item` models) | `SpawnedAt`, `PopFrom` |
 | `Pickups` | Resources (376): Hemp, WoodPile, StonePile, MetalOrePile, SulfurOrePile, BerryBush, Mushroom, Corn, Pumpkin, Potato, Carrot, Apple | `PickupType`, `Remaining` |
-| `Nodes` | Trees (204), Cactus (315), Stone (64), Metal (42), Sulfur (43) | `NodeType`, `Hp/MaxHp`, `GrowAt`, `TreeKind` |
+| `Nodes` | Trees / Cactus / Stone / Metal / Sulfur (`FustNode` tag) | `NodeType`, `Hp/MaxHp`, `GrowAt`, `TreeKind`, **`WeakSpot` (Vector3)** — red mark target; only on **damaged** nodes. Melee weak hit if impact within **2 studs**. UI: `PlayerGui.FustWeakSpotMark` on `Camera.FustWeakSpot`. |
 | `ArrowPickups` | Arrows on the ground | `ArrowItem` |
 | `Deployables` | AutoTurret, Battery, Bed, Campfire, Furnace, Candles, CeilingLight, HighWood/StoneWall, HighWoodGate, Ladder, BambooRack, Backpack (death bags) … | `Kind`, `OwnerTag`, `Hp/MaxHp`, `PowerOn/Powered` (turrets), `Locked/HasLock/GateOpen` (gates), `Lit`, `ReadyAt` (beds) |
 | `Buildings` | Base pieces (1242): wall, halfwall, floor, tri_floor, foundation … | `PieceType`, `Tier` (wood/stone/metal), `Hp/MaxHp`, `AutoHeal`, `OwnerTag`, `PlacedAt` |

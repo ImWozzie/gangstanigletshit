@@ -4,7 +4,8 @@ return function(deps)
 	local Esp = deps.Esp
 	local Aim = deps.Aim
 	local World = deps.World
-	local bundleVersion = deps.BundleVersion or "2.5.0"
+	local Misc = deps.Misc
+	local bundleVersion = deps.BundleVersion or "2.6.0"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false
@@ -565,6 +566,105 @@ return function(deps)
 	Aim.requireAds = false
 	Aim.useMouseDrive = true
 
+	local miscTab = Window:Tab({ Name = "Misc", Icon = "wrench", Description = "Farming helpers" })
+	local farmSec = miscTab:Section({ Name = "Gather", Icon = "axe", Side = "Left" })
+	farmSec:Label("Auto-aims at node <b>WeakSpot</b> (red mark) and clicks — FustGather still fires Swing. WeakSpots only exist on damaged nodes.")
+	farmSec:Toggle({
+		Name = "Auto hit red marks",
+		Description = "Camera snap to WeakSpot + LMB — melee range",
+		Default = false,
+		Flag = "Fust_AutoWeak",
+		Callback = function(v)
+			if Misc then
+				Misc.autoWeak = v
+				Misc:syncBind()
+			end
+		end,
+	})
+	farmSec:Toggle({
+		Name = "Prime fresh nodes",
+		Description = "If no red mark nearby, tap an undamaged node once to spawn one",
+		Default = false,
+		Flag = "Fust_PrimeFresh",
+		DependsOn = "Fust_AutoWeak",
+		Callback = function(v)
+			if Misc then
+				Misc.primeFresh = v
+			end
+		end,
+	})
+	farmSec:Toggle({
+		Name = "Require held tool",
+		Description = "Only swing while a Tool is equipped",
+		Default = true,
+		Flag = "Fust_WeakNeedTool",
+		DependsOn = "Fust_AutoWeak",
+		Callback = function(v)
+			if Misc then
+				Misc.requireTool = v
+			end
+		end,
+	})
+	farmSec:Dropdown({
+		Name = "Node types",
+		Multi = true,
+		Default = { "tree", "stone", "metal", "sulfur" },
+		Options = { "tree", "stone", "metal", "sulfur" },
+		Flag = "Fust_WeakTypes",
+		DependsOn = "Fust_AutoWeak",
+		Callback = function(v)
+			if Misc and type(v) == "table" then
+				Misc:setNodeTypes(v)
+			end
+		end,
+	})
+	farmSec:Slider({
+		Name = "Gather range",
+		Min = 4,
+		Max = 12,
+		Default = 8.5,
+		Increment = 0.25,
+		Suffix = " st",
+		Flag = "Fust_WeakRange",
+		DependsOn = "Fust_AutoWeak",
+		Callback = function(v)
+			if Misc then
+				Misc.maxDist = v
+			end
+		end,
+	})
+	farmSec:Slider({
+		Name = "Swing cooldown",
+		Min = 200,
+		Max = 900,
+		Default = 420,
+		Increment = 10,
+		Suffix = " ms",
+		Flag = "Fust_WeakCd",
+		DependsOn = "Fust_AutoWeak",
+		Callback = function(v)
+			if Misc then
+				Misc.swingCooldownMs = v
+			end
+		end,
+	})
+	farmSec:Slider({
+		Name = "Aim deadzone",
+		Description = "Pixels from crosshair before click",
+		Min = 4,
+		Max = 40,
+		Default = 14,
+		Increment = 1,
+		Suffix = " px",
+		Flag = "Fust_WeakDead",
+		DependsOn = "Fust_AutoWeak",
+		Callback = function(v)
+			if Misc then
+				Misc.aimDeadzonePx = v
+			end
+		end,
+	})
+
 	local worldTab = Window:Tab({ Name = "World", Icon = "sun", Description = "Lighting & time" })
 	local lightSec = worldTab:Section({ Name = "Lighting", Icon = "sun", Side = "Left" })
 	lightSec:Label("<b>Fullbright disabled.</b> Lighting Ambient/Brightness writes were reported by FustSky (ACM → MotionSync) and led to a permanent Cheating ban on 2026-11-06. Do not re-enable.")
@@ -620,6 +720,7 @@ return function(deps)
 		"Fust_AimKey1",
 		"Fust_AimKey2",
 		"Fust_TrigKey",
+		"Fust_AutoWeak",
 	}
 
 	local function panic()
@@ -641,6 +742,10 @@ return function(deps)
 		Aim.triggerKeyHeld = false
 		Aim.firingSilent = false
 		Aim:syncBind()
+		if Misc then
+			Misc.autoWeak = false
+			Misc:syncBind()
+		end
 		if World then
 			World.timeControlOn = false
 			World:sync()
@@ -648,7 +753,7 @@ return function(deps)
 		pcall(function()
 			Prism:Notify({
 				Title = "Panic",
-				Content = "Aimbot, silent, triggerbot and time changer are off.",
+				Content = "Aimbot, silent, trigger, gather assist and time changer are off.",
 				Type = "Warning",
 				Duration = 4,
 			})
@@ -713,6 +818,9 @@ return function(deps)
 	function bundle.destroy()
 		Aim:destroy()
 		Esp:destroy()
+		if Misc then
+			Misc:destroy()
+		end
 		if World then
 			World:destroy()
 		end
@@ -729,6 +837,7 @@ return function(deps)
 	bundle.Esp = Esp
 	bundle.Aim = Aim
 	bundle.World = World
+	bundle.Misc = Misc
 	bundle.panic = panic
 
 	return bundle

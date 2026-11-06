@@ -103,6 +103,18 @@ Defaults are conservative (assist / silent / trigger off). **Test on an alt firs
 
 ---
 
+## Prefer (lower profile) — gather / Misc (v2.6.0+)
+
+| Feature | Behavior |
+|---------|----------|
+| **Auto hit red marks** | Aim camera at `Node:GetAttribute("WeakSpot")` (Vector3) and VirtualInput click. Game `FustGather` still owns `Remotes.Swing`. Weak hit server-side when impact is within **2 studs** of WeakSpot. |
+| **Prime fresh** | Optional: one click on undamaged nodes (no WeakSpot yet — attribute only appears after damage). |
+| **No Swing spoof** | Do not `FireServer` gather/Swing payloads yourself. |
+
+Keep range near melee (`castAim(9)` ≈ 9 studs). Panic clears this toggle.
+
+---
+
 ## Threading
 
 - Run **`loader/bootstrap.luau`** on **executor thread 8** (thread 2 breaks Prism `cloneref`).
