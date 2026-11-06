@@ -41,6 +41,10 @@ return function(deps)
 		triggerKeyHeld = false,
 		aimKey1Held = false,
 		aimKey2Held = false,
+		aimKey1 = Enum.KeyCode.B,
+		aimKey2 = nil,
+		requireHoldKey = true,
+		lockCapDeg = 6.5,
 		battleMode = false,
 		requireAds = true,
 		showCrosshair = true,
@@ -94,7 +98,19 @@ return function(deps)
 	end
 
 	function Aim:aimKeysHeld()
-		return self.aimKey1Held or self.aimKey2Held
+		if not self.requireHoldKey then
+			return true
+		end
+		local uis = UserInputService
+		local k1 = self.aimKey1Held
+		if not k1 and self.aimKey1 then
+			k1 = uis:IsKeyDown(self.aimKey1)
+		end
+		local k2 = self.aimKey2Held
+		if not k2 and self.aimKey2 then
+			k2 = uis:IsKeyDown(self.aimKey2)
+		end
+		return k1 or k2
 	end
 
 	function Aim:shouldRunAimbot()
@@ -298,6 +314,9 @@ return function(deps)
 			return true
 		end
 		local strength = self:smoothingStrength()
+		if self.aimbotEnabled and self:aimKeysHeld() then
+			strength = math.clamp(strength * 2.2, 0.15, 1)
+		end
 		local step = math.min(capDeg, ang) * strength
 		local t = step / math.max(ang, 0.001)
 		local newLook = look:Lerp(want, t).Unit
@@ -531,7 +550,7 @@ return function(deps)
 			self:ensureCrosshair()
 		end
 
-		RunService:BindToRenderStep(AIM_RENDER, Enum.RenderPriority.Camera.Value + 1, function(dt)
+		RunService:BindToRenderStep(AIM_RENDER, Enum.RenderPriority.Last.Value, function(dt)
 			local cam = workspace.CurrentCamera
 			if not cam then
 				return
@@ -543,7 +562,12 @@ return function(deps)
 				local pt, ch = self:pickTarget(cam, self.weaponFovPx, self.targetBones, self.stickyChar)
 				if pt then
 					self.stickyChar = ch
-					local cap = 0.35 + (100 - math.clamp(self.smoothing, 1, 100)) * 0.025
+					local cap = self.lockCapDeg
+					if self.smoothing >= 50 then
+						cap = cap * 0.65
+					else
+						cap = cap * (1 + (50 - math.clamp(self.smoothing, 1, 50)) * 0.02)
+					end
 					self:rotateToward(cam, pt, cap)
 				else
 					self.stickyChar = nil

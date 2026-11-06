@@ -3,7 +3,8 @@ return function(deps)
 	local Prism = deps.Prism
 	local Esp = deps.Esp
 	local Aim = deps.Aim
-	local bundleVersion = deps.BundleVersion or "2.2.2"
+	local World = deps.World
+	local bundleVersion = deps.BundleVersion or "2.3.0"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false
@@ -205,6 +206,19 @@ return function(deps)
 		end,
 	})
 
+	aimSec:Slider({
+		Name = "Lock strength",
+		Description = "Max degrees per frame toward target",
+		Min = 2,
+		Max = 12,
+		Default = 6.5,
+		Increment = 0.25,
+		Flag = "Fust_LockCap",
+		Callback = function(v)
+			Aim.lockCapDeg = v
+		end,
+	})
+
 	local miscSec = aimTab:Section({ Name = "Misc options", Icon = "sliders", Side = "Right" })
 	miscSec:Toggle({
 		Name = "Draw FOV",
@@ -342,6 +356,15 @@ return function(deps)
 
 	local keySec = aimTab:Section({ Name = "Keybinds", Icon = "keyboard", Side = "Right" })
 	keySec:Toggle({
+		Name = "Require hold key",
+		Description = "Off = aimbot runs whenever enabled (no B hold)",
+		Default = true,
+		Flag = "Fust_ReqHold",
+		Callback = function(v)
+			Aim.requireHoldKey = v
+		end,
+	})
+	keySec:Toggle({
 		Name = "Aimbot key",
 		Description = "Hold to aim — right-click row to rebind",
 		Default = false,
@@ -357,7 +380,7 @@ return function(deps)
 		Default = false,
 		Flag = "Fust_AimKey2",
 		Mode = "Hold",
-		Keybind = Enum.KeyCode.B,
+		Keybind = Enum.KeyCode.V,
 		Callback = function(v)
 			Aim.aimKey2Held = v
 		end,
@@ -384,6 +407,62 @@ return function(deps)
 		end,
 	})
 
+	Aim.aimKey1 = Enum.KeyCode.B
+	Aim.aimKey2 = Enum.KeyCode.V
+
+	local worldTab = Window:Tab({ Name = "World", Icon = "sun", Description = "Lighting & time" })
+	local lightSec = worldTab:Section({ Name = "Lighting", Icon = "sun", Side = "Left" })
+	lightSec:Toggle({
+		Name = "Fullbright",
+		Description = "Bright ambient, no shadows (client Lighting)",
+		Default = false,
+		Flag = "Fust_Fullbright",
+		Callback = function(v)
+			World.fullbrightOn = v
+			World:sync()
+		end,
+	})
+	lightSec:Slider({
+		Name = "Fullbright brightness",
+		Min = 1,
+		Max = 5,
+		Default = 2,
+		Increment = 0.1,
+		Flag = "Fust_FbBright",
+		Callback = function(v)
+			World.brightness = v
+			if World.fullbrightOn then
+				World:sync()
+			end
+		end,
+	})
+	local timeSec = worldTab:Section({ Name = "Time", Icon = "clock", Side = "Right" })
+	timeSec:Toggle({
+		Name = "Time changer",
+		Description = "Locks ClockTime (Heartbeat keeps it)",
+		Default = false,
+		Flag = "Fust_TimeOn",
+		Callback = function(v)
+			World.timeControlOn = v
+			World:sync()
+		end,
+	})
+	timeSec:Slider({
+		Name = "Time of day",
+		Description = "0 = midnight, 12 = noon, 24 = midnight",
+		Min = 0,
+		Max = 24,
+		Default = 14,
+		Increment = 0.05,
+		Flag = "Fust_Clock",
+		Callback = function(v)
+			World.clockTime = v
+			if World.timeControlOn then
+				World:sync()
+			end
+		end,
+	})
+
 	local sysSec = espTab:Section({ Name = "Script", Icon = "power", Side = "Right" })
 	sysSec:Label("Version: " .. bundleVersion .. " — use Refresh if Aimbot tab looks old")
 	sysSec:Button({
@@ -391,7 +470,7 @@ return function(deps)
 		Description = "Re-download all modules",
 		Icon = "refresh-cw",
 		Callback = function()
-			local url = "https://raw.githubusercontent.com/ImWozzie/gangstanigletshit/main/loader/bootstrap.luau"
+			local url = "https://raw.githubusercontent.com/ImWozzie/gangstanigletshit/main/loader/bootstrap.luau?v=" .. bundleVersion
 			local ok, err = pcall(function()
 				loadstring(game:HttpGet(url))()
 			end)
@@ -416,6 +495,9 @@ return function(deps)
 	function bundle.destroy()
 		Aim:destroy()
 		Esp:destroy()
+		if World then
+			World:destroy()
+		end
 	end
 
 	Window:OnUnload(function()
@@ -427,7 +509,7 @@ return function(deps)
 
 	bundle.Window = Window
 	bundle.Esp = Esp
-	bundle.Aim = Aim
+	bundle.World = World
 
 	return bundle
 end
