@@ -3,8 +3,7 @@ return function(deps)
 	local Prism = deps.Prism
 	local Esp = deps.Esp
 	local Aim = deps.Aim
-	local World = deps.World
-	local bundleVersion = deps.BundleVersion or "2.3.1"
+	local bundleVersion = deps.BundleVersion or "2.3.0"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false
@@ -57,11 +56,81 @@ return function(deps)
 		end,
 	})
 
-	local featSec = espTab:Section({ Name = "Features", Icon = "users", Side = "Left" })
+	local visSec = espTab:Section({ Name = "Visuals", Icon = "users", Side = "Left" })
 
-	featSec:Slider({
+	visSec:Toggle({ Name = "Box", Default = true, Flag = "Fust_EspBox", Callback = function(v)
+		Esp.box = v
+	end })
+	visSec:Dropdown({
+		Name = "Box style",
+		Options = { "Full", "Corners" },
+		Default = "Full",
+		Flag = "Fust_EspBoxStyle",
+		DependsOn = "Fust_EspBox",
+		Callback = function(v)
+			Esp.boxStyle = v
+		end,
+	})
+	visSec:Toggle({ Name = "Skeleton", Default = true, Flag = "Fust_EspSkel", Callback = function(v)
+		Esp.skeleton = v
+	end })
+	visSec:Toggle({
+		Name = "Rounded joints",
+		Description = "Smooth dots where bones meet (close range)",
+		Default = true,
+		Flag = "Fust_EspJoints",
+		DependsOn = "Fust_EspSkel",
+		Callback = function(v)
+			Esp.joints = v
+		end,
+	})
+	visSec:Toggle({
+		Name = "Outline",
+		Description = "Dark edge behind lines so they read on any background",
+		Default = true,
+		Flag = "Fust_EspOutline",
+		Callback = function(v)
+			Esp.outline = v
+		end,
+	})
+	visSec:Toggle({ Name = "Name", Default = true, Flag = "Fust_EspName", Callback = function(v)
+		Esp.name = v
+	end })
+	visSec:Toggle({ Name = "Distance", Default = true, Flag = "Fust_EspDist", Callback = function(v)
+		Esp.distance = v
+	end })
+	visSec:Toggle({ Name = "Health bar", Description = "Colour shifts green to red", Default = true, Flag = "Fust_EspHpBar", Callback = function(v)
+		Esp.healthBar = v
+	end })
+	visSec:Toggle({ Name = "Health text", Default = false, Flag = "Fust_EspHpTxt", Callback = function(v)
+		Esp.healthText = v
+	end })
+	visSec:ColorPicker({
+		Name = "ESP colour",
+		Default = Color3.fromRGB(235, 235, 235),
+		Flag = "Fust_EspCol",
+		Callback = function(c)
+			Esp.color = c
+		end,
+	})
+	visSec:Slider({
+		Name = "Line thickness",
+		Min = 1,
+		Max = 4,
+		Default = 1.5,
+		Increment = 0.5,
+		Suffix = " px",
+		Flag = "Fust_EspThick",
+		Callback = function(v)
+			Esp.thickness = v
+		end,
+	})
+
+	local rangeSec = espTab:Section({ Name = "Range & performance", Icon = "gauge", Side = "Right" })
+
+	rangeSec:Slider({
 		Name = "Max distance",
-		Description = "How far away (studs) players can be",
+		Description = "How far away players are shown",
 		Min = 100,
 		Max = 5000,
 		Default = 2500,
@@ -72,26 +141,22 @@ return function(deps)
 			Esp.maxDist = v
 		end,
 	})
-
-	featSec:Toggle({ Name = "Box ESP", Default = true, Flag = "Fust_EspBox", Callback = function(v)
-		Esp.box = v
-	end })
-	featSec:Toggle({ Name = "Skeleton ESP", Default = true, Flag = "Fust_EspSkel", Callback = function(v)
-		Esp.skeleton = v
-	end })
-	featSec:Toggle({ Name = "Name", Default = true, Flag = "Fust_EspName", Callback = function(v)
-		Esp.name = v
-	end })
-	featSec:Toggle({ Name = "Distance", Default = true, Flag = "Fust_EspDist", Callback = function(v)
-		Esp.distance = v
-	end })
-	featSec:Toggle({ Name = "Health bar", Description = "Only within HP range below", Default = true, Flag = "Fust_EspHpBar", Callback = function(v)
-		Esp.healthBar = v
-	end })
-
-	featSec:Slider({
+	rangeSec:Slider({
+		Name = "Skeleton range",
+		Description = "Beyond this: box + name only",
+		Min = 50,
+		Max = 1000,
+		Default = 400,
+		Increment = 25,
+		Suffix = " st",
+		Flag = "Fust_EspSkelRange",
+		Callback = function(v)
+			Esp.skelDist = v
+		end,
+	})
+	rangeSec:Slider({
 		Name = "Health bar range",
-		Description = "Max studs to draw HP bar (not full ESP range)",
+		Description = "Max studs to draw the HP bar",
 		Min = 25,
 		Max = 400,
 		Default = 50,
@@ -102,17 +167,29 @@ return function(deps)
 			Esp.healthBarMaxDist = v
 		end,
 	})
-
-	featSec:Toggle({ Name = "Health text", Default = false, Flag = "Fust_EspHpTxt", Callback = function(v)
-		Esp.healthText = v
-	end })
-
-	featSec:ColorPicker({
-		Name = "ESP colour",
-		Default = Color3.fromRGB(235, 235, 235),
-		Flag = "Fust_EspCol",
-		Callback = function(c)
-			Esp.color = c
+	rangeSec:Slider({
+		Name = "Max players",
+		Description = "Closest players drawn",
+		Min = 1,
+		Max = Esp.MAX_SLOTS or 20,
+		Default = 12,
+		Increment = 1,
+		Flag = "Fust_EspMaxTargets",
+		Callback = function(v)
+			Esp.maxTargets = v
+		end,
+	})
+	rangeSec:Slider({
+		Name = "Update rate",
+		Description = "Higher is smoother, lower is lighter",
+		Min = 5,
+		Max = 60,
+		Default = 30,
+		Increment = 5,
+		Suffix = " Hz",
+		Flag = "Fust_EspRate",
+		Callback = function(v)
+			Esp.rate = v
 		end,
 	})
 
@@ -206,19 +283,6 @@ return function(deps)
 		end,
 	})
 
-	aimSec:Slider({
-		Name = "Lock strength",
-		Description = "Max degrees per frame toward target",
-		Min = 2,
-		Max = 12,
-		Default = 6.5,
-		Increment = 0.25,
-		Flag = "Fust_LockCap",
-		Callback = function(v)
-			Aim.lockCapDeg = v
-		end,
-	})
-
 	local miscSec = aimTab:Section({ Name = "Misc options", Icon = "sliders", Side = "Right" })
 	miscSec:Toggle({
 		Name = "Draw FOV",
@@ -240,7 +304,7 @@ return function(deps)
 	})
 	miscSec:Toggle({
 		Name = "Visible check",
-		Description = "Raycast LOS — only aim at targets you can see",
+		Description = "Raycast — skip targets behind walls",
 		Default = false,
 		Flag = "Fust_VisCheck",
 		Callback = function(v)
@@ -249,32 +313,12 @@ return function(deps)
 	})
 	miscSec:Toggle({
 		Name = "Visual check HUD",
-		Description = "Status line (shows vis on/off, target, ADS)",
-		Default = true,
+		Description = "On-screen aimbot status line",
+		Default = false,
 		Flag = "Fust_VisualHud",
 		Callback = function(v)
 			Aim.visualCheck = v
 			Aim:syncBind()
-		end,
-	})
-	miscSec:Toggle({
-		Name = "Mouse aim (Fust)",
-		Description = "Moves mouse for FustPad — required for lock",
-		Default = true,
-		Flag = "Fust_MouseAim",
-		Callback = function(v)
-			Aim.useMouseDrive = v
-		end,
-	})
-	miscSec:Slider({
-		Name = "Mouse aim strength",
-		Min = 0.05,
-		Max = 0.6,
-		Default = 0.22,
-		Increment = 0.01,
-		Flag = "Fust_MouseStr",
-		Callback = function(v)
-			Aim.mouseDriveStrength = v
 		end,
 	})
 	miscSec:Toggle({
@@ -330,8 +374,8 @@ return function(deps)
 	})
 	miscSec:Toggle({
 		Name = "Require ADS",
-		Description = "Gun/bow aim or RMB — off = always allow aim",
-		Default = false,
+		Description = "FustAimGun / Bow (off in battlemode)",
+		Default = true,
 		Flag = "Fust_AimAds",
 		Callback = function(v)
 			Aim.requireAds = v
@@ -376,15 +420,6 @@ return function(deps)
 
 	local keySec = aimTab:Section({ Name = "Keybinds", Icon = "keyboard", Side = "Right" })
 	keySec:Toggle({
-		Name = "Require hold key",
-		Description = "Off = locks whenever aimbot enabled",
-		Default = false,
-		Flag = "Fust_ReqHold",
-		Callback = function(v)
-			Aim.requireHoldKey = v
-		end,
-	})
-	keySec:Toggle({
 		Name = "Aimbot key",
 		Description = "Hold to aim — right-click row to rebind",
 		Default = false,
@@ -400,7 +435,7 @@ return function(deps)
 		Default = false,
 		Flag = "Fust_AimKey2",
 		Mode = "Hold",
-		Keybind = Enum.KeyCode.V,
+		Keybind = Enum.KeyCode.B,
 		Callback = function(v)
 			Aim.aimKey2Held = v
 		end,
@@ -427,65 +462,6 @@ return function(deps)
 		end,
 	})
 
-	Aim.requireHoldKey = false
-	Aim.requireAds = false
-	Aim.useMouseDrive = true
-	Aim.aimKey1 = Enum.KeyCode.B
-	Aim.aimKey2 = Enum.KeyCode.V
-
-	local worldTab = Window:Tab({ Name = "World", Icon = "sun", Description = "Lighting & time" })
-	local lightSec = worldTab:Section({ Name = "Lighting", Icon = "sun", Side = "Left" })
-	lightSec:Toggle({
-		Name = "Fullbright",
-		Description = "Bright ambient, no shadows (client Lighting)",
-		Default = false,
-		Flag = "Fust_Fullbright",
-		Callback = function(v)
-			World.fullbrightOn = v
-			World:sync()
-		end,
-	})
-	lightSec:Slider({
-		Name = "Fullbright brightness",
-		Min = 1,
-		Max = 5,
-		Default = 2,
-		Increment = 0.1,
-		Flag = "Fust_FbBright",
-		Callback = function(v)
-			World.brightness = v
-			if World.fullbrightOn then
-				World:sync()
-			end
-		end,
-	})
-	local timeSec = worldTab:Section({ Name = "Time", Icon = "clock", Side = "Right" })
-	timeSec:Toggle({
-		Name = "Time changer",
-		Description = "Locks ClockTime (Heartbeat keeps it)",
-		Default = false,
-		Flag = "Fust_TimeOn",
-		Callback = function(v)
-			World.timeControlOn = v
-			World:sync()
-		end,
-	})
-	timeSec:Slider({
-		Name = "Time of day",
-		Description = "0 = midnight, 12 = noon, 24 = midnight",
-		Min = 0,
-		Max = 24,
-		Default = 14,
-		Increment = 0.05,
-		Flag = "Fust_Clock",
-		Callback = function(v)
-			World.clockTime = v
-			if World.timeControlOn then
-				World:sync()
-			end
-		end,
-	})
-
 	local sysSec = espTab:Section({ Name = "Script", Icon = "power", Side = "Right" })
 	sysSec:Label("Version: " .. bundleVersion .. " — use Refresh if Aimbot tab looks old")
 	sysSec:Button({
@@ -493,7 +469,7 @@ return function(deps)
 		Description = "Re-download all modules",
 		Icon = "refresh-cw",
 		Callback = function()
-			local url = "https://raw.githubusercontent.com/ImWozzie/gangstanigletshit/main/loader/bootstrap.luau?v=" .. bundleVersion
+			local url = "https://raw.githubusercontent.com/ImWozzie/gangstanigletshit/main/loader/bootstrap.luau"
 			local ok, err = pcall(function()
 				loadstring(game:HttpGet(url))()
 			end)
@@ -518,9 +494,6 @@ return function(deps)
 	function bundle.destroy()
 		Aim:destroy()
 		Esp:destroy()
-		if World then
-			World:destroy()
-		end
 	end
 
 	Window:OnUnload(function()
@@ -532,7 +505,7 @@ return function(deps)
 
 	bundle.Window = Window
 	bundle.Esp = Esp
-	bundle.World = World
+	bundle.Aim = Aim
 
 	return bundle
 end
