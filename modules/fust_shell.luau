@@ -5,7 +5,7 @@ return function(deps)
 	local Aim = deps.Aim
 	local World = deps.World
 	local Misc = deps.Misc
-	local bundleVersion = deps.BundleVersion or "2.9.5"
+	local bundleVersion = deps.BundleVersion or "2.9.8"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false
@@ -22,6 +22,8 @@ return function(deps)
 		Intro = false,
 		ToggleKey = Enum.KeyCode.RightControl,
 		Size = Vector2.new(640, 640),
+		ConfigFolder = "FustHub",
+		PerGameConfigs = true,
 	})
 
 	local aimTab = Window:Tab({ Name = "Aimbot", Icon = "crosshair" })
@@ -473,6 +475,23 @@ return function(deps)
 			Esp.color = c
 		end,
 	})
+	visSec:Toggle({
+		Name = "Visible colour",
+		Default = false,
+		Flag = "Fust_EspVis",
+		Callback = function(v)
+			Esp.visibleCheck = v
+		end,
+	})
+	visSec:ColorPicker({
+		Name = "When visible",
+		Default = Color3.fromRGB(152, 255, 200),
+		Flag = "Fust_EspVisCol",
+		DependsOn = "Fust_EspVis",
+		Callback = function(c)
+			Esp.visibleColor = c
+		end,
+	})
 	visSec:Slider({
 		Name = "Thickness",
 		Min = 1,
@@ -616,9 +635,8 @@ return function(deps)
 	local function worldToggle(sec, name, flag, key)
 		sec:Toggle({
 			Name = name,
-			Default = World.toggles[key] == true,
+			Default = false,
 			Flag = flag,
-			DependsOn = "Fust_WorldEsp",
 			Callback = function(v)
 				World:setToggle(key, v)
 			end,
@@ -1143,7 +1161,373 @@ return function(deps)
 		end)
 	end
 
-	local safeSec = setTab:Section({ Name = "Safety", Icon = "shield", Side = "Left" })
+	local cfgSec = setTab:Section({ Name = "Configs", Icon = "save", Side = "Left" })
+	local canFiles = type(isfile) == "function"
+		and type(writefile) == "function"
+		and type(readfile) == "function"
+	local autoPath = Window.ConfigFolder .. "/autoload.txt"
+	local autoSavePath = Window.ConfigFolder .. "/autosave.txt"
+	local syncProfiles = function() end
+
+	local function listedConfigs()
+		local out = {}
+		for _, name in ipairs(Window:ListConfigs()) do
+			if name ~= "profiles" then
+				table.insert(out, name)
+			end
+		end
+		return out
+	end
+
+	local nameBox = cfgSec:Textbox({
+		Name = "Name",
+		Placeholder = "default",
+		Default = "default",
+		Callback = function()
+			syncProfiles()
+		end,
+	})
+	local cfgList = cfgSec:Dropdown({
+		Name = "Saved",
+		Options = listedConfigs(),
+		Placeholder = "—",
+		Callback = function(v)
+			if v and nameBox and nameBox.Set then
+				nameBox:Set(v, true)
+				syncProfiles()
+			end
+		end,
+	})
+	local function cfgName()
+		local n = nameBox and nameBox.Value
+		if type(n) == "string" and n ~= "" then
+			return n
+		end
+		return "default"
+	end
+	local function refreshConfigs()
+		if cfgList and cfgList.Refresh then
+			cfgList:Refresh(listedConfigs())
+		end
+	end
+	cfgSec:Button({
+		Name = "Save",
+		Icon = "save",
+		Style = "Primary",
+		Callback = function()
+			local ok = Window:SaveConfig(cfgName())
+			refreshConfigs()
+			pcall(function()
+				Prism:Notify({
+					Title = ok and "Saved" or "Failed",
+					Content = ok and cfgName() or "No file access",
+					Type = ok and "Success" or "Error",
+					Duration = 3,
+				})
+			end)
+		end,
+	})
+	cfgSec:ButtonRow({
+		{
+			Name = "Load",
+			Icon = "folder-open",
+			Callback = function()
+				local ok = Window:LoadConfig(cfgName())
+				syncProfiles()
+				pcall(function()
+					Prism:Notify({
+						Title = ok and "Loaded" or "Missing",
+						Content = cfgName(),
+						Type = ok and "Success" or "Warning",
+						Duration = 3,
+					})
+				end)
+			end,
+		},
+		{
+			Name = "Delete",
+			Icon = "trash-2",
+			Hold = 1,
+			HoldText = "Hold...",
+			Callback = function()
+				if Window:DeleteConfig(cfgName()) then
+					refreshConfigs()
+					syncProfiles()
+				end
+			end,
+		},
+		{
+			Name = "Refresh",
+			Icon = "refresh-cw",
+			Callback = refreshConfigs,
+		},
+	})
+	cfgSec:ButtonRow({
+		{
+			Name = "Share",
+			Icon = "upload",
+			Callback = function()
+				pcall(function()
+					Prism:Notify({ Title = "Uploading…", Content = "", Duration = 2 })
+				end)
+				local code, err = Window:ShareConfig()
+				if code then
+					if setclipboard then
+						setclipboard(code)
+					end
+					pcall(function()
+						Prism:Notify({
+							Title = "Share: " .. tostring(code),
+							Content = "Copied",
+							Type = "Success",
+							Duration = 8,
+						})
+					end)
+				else
+					pcall(function()
+						Prism:Notify({
+							Title = "Share failed",
+							Content = tostring(err or ""),
+							Type = "Error",
+							Duration = 4,
+						})
+					end)
+				end
+			end,
+		},
+		{
+			Name = "Export",
+			Icon = "copy",
+			Callback = function()
+				if setclipboard then
+					setclipboard(Window:ExportConfig())
+					pcall(function()
+						Prism:Notify({ Title = "Exported", Content = "Clipboard", Type = "Success", Duration = 3 })
+					end)
+				end
+			end,
+		},
+	})
+	cfgSec:Textbox({
+		Name = "Import",
+		Placeholder = "Paste JSON…",
+		ClearOnEnter = true,
+		Callback = function(text)
+			if text == "" then
+				return
+			end
+			local ok = Window:ImportConfig(text)
+			pcall(function()
+				Prism:Notify({
+					Title = ok and "Imported" or "Invalid",
+					Content = "",
+					Type = ok and "Success" or "Error",
+					Duration = 3,
+				})
+			end)
+		end,
+	})
+	cfgSec:Textbox({
+		Name = "Import code",
+		Placeholder = "Share code…",
+		ClearOnEnter = true,
+		Callback = function(code)
+			if code == "" then
+				return
+			end
+			local ok, err = Window:ImportShared(code)
+			pcall(function()
+				Prism:Notify({
+					Title = ok and "Imported" or "Failed",
+					Content = ok and "" or tostring(err or ""),
+					Type = ok and "Success" or "Error",
+					Duration = 3,
+				})
+			end)
+		end,
+	})
+
+	local function autoloadName()
+		if canFiles and isfile(autoPath) then
+			return readfile(autoPath)
+		end
+		return nil
+	end
+	local autoToggle = cfgSec:Toggle({
+		Name = "Autoload",
+		Default = false,
+		HideFromList = true,
+		Callback = function(on)
+			if not canFiles then
+				return
+			end
+			pcall(function()
+				if type(makefolder) == "function" then
+					makefolder(Window.ConfigFolder)
+				end
+				if on then
+					writefile(autoPath, cfgName())
+				elseif isfile(autoPath) and readfile(autoPath) == cfgName() and type(delfile) == "function" then
+					delfile(autoPath)
+				end
+			end)
+		end,
+	})
+	local placeToggle = cfgSec:Toggle({
+		Name = "Place profile",
+		Default = false,
+		HideFromList = true,
+		Callback = function(on)
+			if on then
+				Window:SetProfile("Place", cfgName())
+			elseif Window:GetProfile("Place") == cfgName() then
+				Window:SetProfile("Place", nil)
+			end
+		end,
+	})
+	local accountToggle = cfgSec:Toggle({
+		Name = "Account profile",
+		Default = false,
+		HideFromList = true,
+		Callback = function(on)
+			if on then
+				Window:SetProfile("Account", cfgName())
+			elseif Window:GetProfile("Account") == cfgName() then
+				Window:SetProfile("Account", nil)
+			end
+		end,
+	})
+	syncProfiles = function()
+		local name = cfgName()
+		if autoToggle and autoToggle.Set then
+			autoToggle:Set(autoloadName() == name, true)
+		end
+		if placeToggle and placeToggle.Set then
+			placeToggle:Set(Window:GetProfile("Place") == name, true)
+		end
+		if accountToggle and accountToggle.Set then
+			accountToggle:Set(Window:GetProfile("Account") == name, true)
+		end
+	end
+
+	local saveStat = cfgSec:Stat({ Name = "Auto-save", Value = "Off", Icon = "clock" })
+	local lastSnapshot, warnedOverwrite
+	local function snapshot()
+		return Window:ExportConfig()
+	end
+	local function autoSave()
+		if not (Window.AutoSave and canFiles) then
+			return
+		end
+		local snap = snapshot()
+		if snap == lastSnapshot then
+			return
+		end
+		local target = Window.ActiveConfig
+		if not target then
+			local name = cfgName()
+			if isfile(Window.ConfigFolder .. "/" .. name .. ".json") then
+				if not warnedOverwrite then
+					warnedOverwrite = true
+					pcall(function()
+						Prism:Notify({
+							Title = "Auto-save paused",
+							Content = name .. " exists — load or overwrite",
+							Type = "Warning",
+							Duration = 10,
+							Buttons = {
+								{
+									Name = "Load",
+									Primary = true,
+									Callback = function()
+										Window:LoadConfig(name)
+									end,
+								},
+								{
+									Name = "Overwrite",
+									Callback = function()
+										Window.ActiveConfig = name
+									end,
+								},
+							},
+						})
+					end)
+				end
+				return
+			end
+			target = name
+		end
+		lastSnapshot = snap
+		local isNew = not isfile(Window.ConfigFolder .. "/" .. target .. ".json")
+		if Window:SaveConfig(target) then
+			if saveStat and saveStat.Set then
+				saveStat:Set(target .. " · " .. os.date("%H:%M:%S"))
+			end
+			if isNew then
+				refreshConfigs()
+			end
+		end
+	end
+	Window._autoSaveFinal = autoSave
+	local autoSaveDefault = canFiles and isfile(autoSavePath) or false
+	Window.AutoSave = autoSaveDefault
+	if autoSaveDefault and saveStat and saveStat.Set then
+		saveStat:Set("Waiting…")
+	end
+	cfgSec:Toggle({
+		Name = "Auto-save",
+		Default = autoSaveDefault,
+		HideFromList = true,
+		Callback = function(on)
+			Window.AutoSave = on
+			warnedOverwrite = false
+			if saveStat and saveStat.Set then
+				saveStat:Set(on and "Waiting…" or "Off")
+			end
+			if not canFiles then
+				return
+			end
+			pcall(function()
+				if type(makefolder) == "function" then
+					makefolder(Window.ConfigFolder)
+				end
+				if on then
+					writefile(autoSavePath, "1")
+				elseif isfile(autoSavePath) and type(delfile) == "function" then
+					delfile(autoSavePath)
+				end
+			end)
+		end,
+	})
+	task.spawn(function()
+		task.wait(3)
+		lastSnapshot = snapshot()
+		while Window.Gui and Window.Gui.Parent and not Window._unloaded do
+			pcall(autoSave)
+			task.wait(2)
+		end
+	end)
+
+	-- Startup: place → account → autoload.txt
+	task.defer(function()
+		local startName = Window:GetProfile("Place")
+		if not startName then
+			startName = Window:GetProfile("Account")
+		end
+		if not startName and canFiles and isfile(autoPath) then
+			startName = readfile(autoPath)
+		end
+		if type(startName) == "string" and startName ~= "" then
+			if nameBox and nameBox.Set then
+				nameBox:Set(startName, true)
+			end
+			Window:LoadConfig(startName)
+			refreshConfigs()
+		end
+		syncProfiles()
+	end)
+
+	local safeSec = setTab:Section({ Name = "Safety", Icon = "shield", Side = "Right" })
 	safeSec:Button({
 		Name = "Panic",
 		Icon = "shield-off",

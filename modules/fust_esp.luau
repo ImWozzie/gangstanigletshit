@@ -86,6 +86,8 @@ return function(deps)
 		healthBarMaxDist = 50,
 		healthText = false,
 		color = Color3.fromRGB(235, 235, 235),
+		visibleCheck = false,
+		visibleColor = Color3.fromRGB(152, 255, 200), -- mint
 		thickness = 1.5,
 	}
 
@@ -103,6 +105,10 @@ return function(deps)
 	local HELD_COLOR = Color3.fromRGB(255, 210, 120)
 	local HEAD_UP = Vector3.new(0, 0.6, 0)
 	local FEET_DOWN = Vector3.new(0, 2.9, 0)
+	local rayParams = RaycastParams.new()
+	rayParams.FilterType = Enum.RaycastFilterType.Exclude
+	rayParams.IgnoreWater = true
+	local rayIgnore = {}
 
 	-- A pooled frame plus the last values written to it.
 	local function newRec(frame)
@@ -365,6 +371,45 @@ return function(deps)
 		return HP_LOW:Lerp(HP_HIGH, pct)
 	end
 
+	-- Camera → head LOS; transparent / non-collide parts are stepped through (same idea as aim).
+	local function isVisible(camPos, to, char)
+		local dir = to - camPos
+		local dist = dir.Magnitude
+		if dist < 0.05 then
+			return true
+		end
+		table.clear(rayIgnore)
+		local myChar = LOCAL.Character
+		if myChar then
+			rayIgnore[1] = myChar
+		end
+		rayParams.FilterDescendantsInstances = rayIgnore
+		local unit = dir.Unit
+		local origin = camPos
+		local remaining = dist
+		for _ = 1, 6 do
+			local hit = workspace:Raycast(origin, unit * remaining, rayParams)
+			if not hit then
+				return true
+			end
+			if char and hit.Instance:IsDescendantOf(char) then
+				return true
+			end
+			local inst = hit.Instance
+			if not (inst:IsA("BasePart") and (inst.Transparency > 0.4 or not inst.CanCollide)) then
+				return false
+			end
+			rayIgnore[#rayIgnore + 1] = inst
+			rayParams.FilterDescendantsInstances = rayIgnore
+			remaining -= (hit.Position - origin).Magnitude
+			origin = hit.Position + unit * 0.05
+			if remaining <= 0.05 then
+				return true
+			end
+		end
+		return false
+	end
+
 	local function scan()
 		local myRoot = LOCAL.Character and LOCAL.Character:FindFirstChild("HumanoidRootPart")
 		targets = pickTargets(myRoot and myRoot.Position)
@@ -497,7 +542,10 @@ return function(deps)
 			return
 		end
 		local vp = camera.ViewportSize
-		local color = Esp.color
+		local baseColor = Esp.color
+		local visColor = Esp.visibleColor
+		local checkVis = Esp.visibleCheck
+		local camPos = camera.CFrame.Position
 		local used = 0
 		for i, t in ipairs(targets) do
 			local c = t.cache
@@ -516,6 +564,10 @@ return function(deps)
 			if not ok then
 				hideSlot(s)
 			else
+				local color = baseColor
+				if checkVis and isVisible(camPos, head.Position, t.char) then
+					color = visColor
+				end
 				local y0, y1 = math.min(top.Y, bottom.Y), math.max(top.Y, bottom.Y)
 				local h = math.max(y1 - y0, 14)
 				y1 = y0 + h
