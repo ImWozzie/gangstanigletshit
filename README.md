@@ -13,6 +13,7 @@ Fust Survival scripts — **split modules** + one bootstrap loader (lua-bundle s
 | `modules/fust_aim.luau` | Aim assist / snap only |
 | `modules/fust_shell.luau` | Menu tabs wiring (ESP + Aim) |
 | `AVOID.md` | Anti-cheat notes |
+| `AGENTS.md` | Architecture + workflow for AI agents |
 
 Push updates to **one module** on GitHub; re-run bootstrap in-game to pull fresh copies without touching the others.
 
