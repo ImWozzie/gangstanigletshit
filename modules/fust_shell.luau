@@ -5,7 +5,7 @@ return function(deps)
 	local Aim = deps.Aim
 	local World = deps.World
 	local Misc = deps.Misc
-	local bundleVersion = deps.BundleVersion or "2.6.0"
+	local bundleVersion = deps.BundleVersion or "2.6.1"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false
@@ -571,8 +571,9 @@ return function(deps)
 	farmSec:Label("Auto-aims at node <b>WeakSpot</b> (red mark) and clicks — FustGather still fires Swing. WeakSpots only exist on damaged nodes.")
 	farmSec:Toggle({
 		Name = "Auto hit red marks",
-		Description = "Camera snap to WeakSpot + LMB — melee range",
+		Description = "Camera snap to WeakSpot + LMB — melee range · obvious to watching staff",
 		Default = false,
+		Risky = true,
 		Flag = "Fust_AutoWeak",
 		Callback = function(v)
 			if Misc then

@@ -144,6 +144,20 @@ Session context (same job `2de05adb-…`):
 
 **Conclusion:** treat **any Lighting Ambient/Brightness/Exposure raise** as ban-tier while ACM is on. Fullbright Lighting path is **disabled** in `fust_world.luau`. Camera colour filters / PointLights were safer for AC but weaker visually — do not bring Lighting paints back without proof ACM is off.
 
+**2026-11-06 14:17 (UTC+8) / 06:17 UTC — staff ban: Multihack (10 years).**
+
+Roblox player log `…T061215Z_Player_23A02_last.log`:
+
+```
+Error: Server Kick Message: You are banned from Fust Survival: BRO THOUGHT HE WAS HIM. HE WAS NOT HIM (10 years left, until 2036-11-03 06:17 UTC); Metadata:
+Error: Server Kick Message: Banned for Multihack; Metadata:
+Disconnect reason: 267
+```
+
+This is **not** the automated FustSky `{ lt = … }` path. The custom meme reason + Multihack category is **moderator-issued**. Same afternoon as the Lighting Cheating ban; minutes after loading **v2.6.0** (Misc auto WeakSpot) on the live alpha. Client log has no MotionSync/lt subtype.
+
+**Conclusion:** account/session was already under staff attention. Running the full Prism suite (ESP / aim / gather camera snaps) on a flagged main is enough for a hand Multihack ban — no single new ACM fingerprint required. Stop testing on that account.
+
 ---
 
 ## 6. Rules for agents running anything in-game

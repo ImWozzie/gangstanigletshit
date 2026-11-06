@@ -113,6 +113,8 @@ Defaults are conservative (assist / silent / trigger off). **Test on an alt firs
 
 Keep range near melee (`castAim(9)` ≈ 9 studs). Panic clears this toggle.
 
+**2026-11-06 14:17:** after enabling gather assist on live alpha, staff issued a **10-year Multihack** ban (`BRO THOUGHT HE WAS HIM…` + `Banned for Multihack`). That is a **hand ban**, not Lighting ACM. Do not treat Misc as “safe” on a watched account.
+
 ---
 
 ## Threading
