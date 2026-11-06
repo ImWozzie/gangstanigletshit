@@ -79,9 +79,12 @@ These are **especially** likely to trip Fust after GunControl / server validatio
 | **`hookmetamethod` on RemoteEvent** | Classic AC target; overlaps with AnimShield. |
 | **Instant snap > ~10–14° per frame** every shot | Statistical aim snaps vs input / camera delta. |
 | **Aim while not ADS** when the game expects ADS | Breaks expected input state machine (bundle defaults allow non-ADS; keep Require ADS on for lower profile). |
-| **Fighting `FustPad` `aimStep` every frame** | Two systems rotating camera = erratic signal — prefer `mousemoverel` for assist; camera CFrame only for short silent bursts. |
+| **Fighting `FustPad` `aimStep` every frame** | Two systems rotating camera = erratic signal. |
+| **Continuous `mousemoverel` aimlock** | Same Multihack class as gather mouse+click (2026-11-06 14:32). |
+| **Camera silent on LMB** | Same LookPitch / mouse fingerprint. Disabled in v2.6.4. |
+| **VirtualInput triggerbot** | Auto-click fingerprint. Disabled in v2.6.4. |
 
-**We do not ship true silent aim or AC handshake bypass in this repo.**
+**We do not ship true silent aim (Shoot spoof / ray redirect) or AC handshake bypass.** Scripts that “silently” hit without looking are spoofing remotes — out of scope here. Soft lock assist is opt-in, tiny, ADS+hold, off by default.
 
 ---
 

@@ -1,6 +1,8 @@
--- Fust aim module (camera-only, no GunControl / Raycast hooks). factory(deps) -> Aim
--- "Silent" = multi-frame camera snap on LMB inside FOV. LOS uses workspace:Raycast for
--- visibility only — never redirects bullets or wraps GunControl.
+-- Fust aim module (camera-only, no GunControl / Raycast / Shoot hooks). factory(deps) -> Aim
+-- 2026-11-06: automated mousemoverel + camera snaps correlated with Multihack bans
+-- (gather lookAt, gather mouse+click). Movement assist / camera silent / triggerbot
+-- are disabled no-ops until a safer path exists. Visual FOV/crosshair still work.
+-- True silent (Shoot spoof / ray redirect) is out of scope — server LookPitch vs aim.
 return function(deps)
 	local Players = deps.Players
 	local RunService = deps.RunService
@@ -35,12 +37,17 @@ return function(deps)
 		ignoreTeam = true,
 		drawFov = true,
 		filledFov = false,
-		silentOn = false,
+		silentOn = false, -- disabled: camera/mouse silent = Multihack-class
 		silentFovPx = 90,
 		silentStrength = 1,
-		silentMaxDeg = 3.5, -- keep low: FustLook LookPitch samples camera pitch ~10Hz
-		silentSteps = 2,
-		triggerEnabled = false,
+		silentMaxDeg = 2,
+		silentSteps = 1,
+		silentDisabled = true,
+		triggerEnabled = false, -- disabled: VirtualInput auto-click = Multihack-class
+		triggerDisabled = true,
+		lockAssist = false, -- disabled: continuous mousemoverel lock = Multihack-class
+		maxMousePx = 2,
+		assistHz = 18,
 		triggerBones = { "Head" },
 		triggerDelayMs = 10,
 		triggerKeyHeld = false,
@@ -51,12 +58,13 @@ return function(deps)
 		triggerKey = Enum.KeyCode.B,
 		mouseRemX = 0,
 		mouseRemY = 0,
-		requireHoldKey = false,
-		lockCapDeg = 6.5,
+		requireHoldKey = true,
+		lockCapDeg = 2.5,
 		battleMode = false,
-		requireAds = false,
+		requireAds = true,
 		useMouseDrive = true,
-		mouseDriveStrength = 0.22,
+		mouseDriveStrength = 0.08,
+		assistAcc = 0,
 		showCrosshair = true,
 		visualCheck = false,
 		crossSize = 10,
@@ -77,8 +85,6 @@ return function(deps)
 		lastShowCross = nil,
 		lastShowRing = nil,
 		lastShowFill = nil,
-		inputBeganConn = nil,
-		inputEndedConn = nil,
 	}
 
 	-- Reused raycast state (avoid alloc every LOS check).
@@ -149,6 +155,9 @@ return function(deps)
 	end
 
 	function Aim:shouldRunAimbot()
+		if self.lockAssist == false then
+			return false
+		end
 		return self.aimbotEnabled and self:aimKeysHeld() and self:canAim()
 	end
 
@@ -381,13 +390,14 @@ return function(deps)
 	end
 
 	function Aim:rotateToward(cam, worldPos, capDeg)
-		if self.useMouseDrive then
-			return self:mouseDriveToward(cam, worldPos)
-		end
-		return self:cameraSnapToward(cam, worldPos, capDeg)
+		-- Never hard CFrame snap for lock — LookPitch. Mouse only, tiny steps.
+		return self:mouseDriveToward(cam, worldPos)
 	end
 
 	function Aim:mouseDriveToward(cam, worldPos)
+		if self.lockAssist == false and not self.silentOn then
+			return false
+		end
 		local sp, on = cam:WorldToViewportPoint(worldPos)
 		if not on or sp.Z <= 0 then
 			return false
@@ -399,34 +409,26 @@ return function(deps)
 		if dist <= self.deadzonePx then
 			return true
 		end
-		local factor = self.mouseDriveStrength * self:smoothingStrength()
-		if self.aimbotEnabled and self:aimKeysHeld() then
-			factor = math.clamp(factor * 2.5, 0.08, 0.55)
-		end
+		-- Soft pull only — no 2.5x boost (that was Multihack-shaped).
+		local factor = math.clamp(self.mouseDriveStrength * self:smoothingStrength(), 0.02, 0.12)
 		local mx = dx * factor + self.mouseRemX
 		local my = dy * factor + self.mouseRemY
 		local sx = mx >= 0 and math.floor(mx) or math.ceil(mx)
 		local sy = my >= 0 and math.floor(my) or math.ceil(my)
-		local halfDead = self.deadzonePx * 0.5
-		if sx == 0 and math.abs(dx) > halfDead then
-			sx = dx > 0 and 1 or -1
-		end
-		if sy == 0 and math.abs(dy) > halfDead then
-			sy = dy > 0 and 1 or -1
-		end
+		local cap = math.max(1, math.floor(self.maxMousePx or 2))
+		sx = math.clamp(sx, -cap, cap)
+		sy = math.clamp(sy, -cap, cap)
+		-- Do not force 1px when nearly still — that screamed bot.
 		self.mouseRemX = math.clamp(mx - sx, -1, 1)
 		self.mouseRemY = math.clamp(my - sy, -1, 1)
 		if sx == 0 and sy == 0 then
-			return true
+			return dist <= self.deadzonePx * 2
 		end
 		if type(mousemoverel) == "function" then
 			mousemoverel(sx, sy)
 			return true
 		end
-		local ok = pcall(function()
-			game:GetService("VirtualInputManager"):SendMouseMoveEvent(cx + sx, cy + sy, game)
-		end)
-		return ok
+		return false
 	end
 
 	function Aim:fovRadiusPx(_, px)
@@ -615,62 +617,14 @@ return function(deps)
 		end
 	end
 
-	-- Camera silent: short capped pull on fire. Prefer mouse drive when enabled (LookPitch-safe).
-	function Aim:runSilentBurst(cam)
-		if not self.silentOn or not self:canAim() then
-			return
-		end
-		local pt, ch = self:pickTarget(cam, self.silentFovPx, self.targetBones, self.stickyChar)
-		if not pt then
-			return
-		end
-		self.stickyChar = ch
-		local cap = math.min(self.silentMaxDeg * self.silentStrength, 5)
-		local steps = math.clamp(math.floor(self.silentSteps + 0.5), 1, 4)
-		for _ = 1, steps do
-			if self.useMouseDrive then
-				self:mouseDriveToward(cam, pt)
-			else
-				self:cameraSnapToward(cam, pt, cap)
-			end
-			pt = select(1, self:bestPointOnChar(ch, self.targetBones, cam)) or pt
-		end
+	-- Disabled: camera/mouse silent shares Multihack fingerprint with gather assists.
+	function Aim:runSilentBurst(_cam)
+		return
 	end
 
-	function Aim:tryTriggerbot(cam, dt)
-		if not self.triggerEnabled or not self:triggerHeld() or not self:canAim() then
-			self.triggerAcc = 0
-			return
-		end
-		local pt = self:pickTarget(cam, math.max(8, self.deadzonePx + 2), self.triggerBones, nil)
-		if not pt then
-			self.triggerAcc = 0
-			return
-		end
-		local px = self:screenDistPx(cam, pt)
-		if px > self.deadzonePx + 1.5 then
-			self.triggerAcc = 0
-			return
-		end
-		self.triggerAcc += dt * 1000
-		if self.triggerAcc < self.triggerDelayMs then
-			return
-		end
-		local now = os.clock()
-		if now - self.lastTrigger < TRIGGER_COOLDOWN then
-			return
-		end
-		self.lastTrigger = now
+	-- Disabled: VirtualInput auto-click shares Multihack fingerprint with gather.
+	function Aim:tryTriggerbot(_cam, _dt)
 		self.triggerAcc = 0
-		pcall(function()
-			local vim = game:GetService("VirtualInputManager")
-			local vs = cam.ViewportSize
-			local cx, cy = vs.X * 0.5, vs.Y * 0.5
-			vim:SendMouseButtonEvent(cx, cy, 0, true, game, 0)
-			task.defer(function()
-				vim:SendMouseButtonEvent(cx, cy, 0, false, game, 0)
-			end)
-		end)
 	end
 
 	function Aim:syncBind()
@@ -698,56 +652,24 @@ return function(deps)
 
 			self:updateVisuals(cam, dt)
 
+			-- Assist throttled + opt-in lockAssist (off by default after Multihack).
 			local runningAim = self:shouldRunAimbot()
-			local silentLive = self.silentOn and (self.firingSilent or os.clock() < self.silentUntil) and self:canAim()
-
 			if runningAim then
-				local pt, ch = self:pickTarget(cam, self.weaponFovPx, self.targetBones, self.stickyChar)
-				if pt then
-					self.stickyChar = ch
-					local cap = self.lockCapDeg
-					local sm = self.smoothing
-					if sm >= 50 then
-						cap *= 0.65
+				self.assistAcc += dt
+				local interval = 1 / math.clamp(self.assistHz or 18, 8, 30)
+				if self.assistAcc >= interval then
+					self.assistAcc = 0
+					local pt, ch = self:pickTarget(cam, self.weaponFovPx, self.targetBones, self.stickyChar)
+					if pt then
+						self.stickyChar = ch
+						self:rotateToward(cam, pt, math.min(self.lockCapDeg, 3))
 					else
-						cap *= 1 + (50 - math.clamp(sm, 1, 50)) * 0.02
+						self.stickyChar = nil
 					end
-					self:rotateToward(cam, pt, cap)
-				else
-					self.stickyChar = nil
 				end
-			elseif not self:aimKeysHeld() and not silentLive then
+			elseif not self:aimKeysHeld() then
 				self.stickyChar = nil
-			end
-
-			if silentLive then
-				self:runSilentBurst(cam)
-			end
-
-			if self.triggerEnabled then
-				self:tryTriggerbot(cam, dt)
-			end
-		end)
-
-		self.inputBeganConn = UserInputService.InputBegan:Connect(function(input, processed)
-			if processed or input.UserInputType ~= Enum.UserInputType.MouseButton1 then
-				return
-			end
-			if not self.silentOn or not self:canAim() then
-				return
-			end
-			local cam = workspace.CurrentCamera
-			if not cam then
-				return
-			end
-			self.firingSilent = true
-			self.silentUntil = os.clock() + SILENT_HOLD
-			self:runSilentBurst(cam)
-		end)
-
-		self.inputEndedConn = UserInputService.InputEnded:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseButton1 then
-				self.firingSilent = false
+				self.assistAcc = 0
 			end
 		end)
 	end
@@ -756,19 +678,12 @@ return function(deps)
 		pcall(function()
 			RunService:UnbindFromRenderStep(AIM_RENDER)
 		end)
-		if self.inputBeganConn then
-			self.inputBeganConn:Disconnect()
-			self.inputBeganConn = nil
-		end
-		if self.inputEndedConn then
-			self.inputEndedConn:Disconnect()
-			self.inputEndedConn = nil
-		end
 		self.bound = false
 		self.stickyChar = nil
 		self.firingSilent = false
 		self.silentUntil = 0
 		self.triggerAcc = 0
+		self.assistAcc = 0
 		self.mouseRemX = 0
 		self.mouseRemY = 0
 	end
@@ -777,6 +692,7 @@ return function(deps)
 		self.aimbotEnabled = false
 		self.silentOn = false
 		self.triggerEnabled = false
+		self.lockAssist = false
 		self.aimKey1Held = false
 		self.aimKey2Held = false
 		self.triggerKeyHeld = false

@@ -5,7 +5,7 @@ return function(deps)
 	local Aim = deps.Aim
 	local World = deps.World
 	local Misc = deps.Misc
-	local bundleVersion = deps.BundleVersion or "2.6.3"
+	local bundleVersion = deps.BundleVersion or "2.6.4"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false
@@ -216,12 +216,26 @@ return function(deps)
 	local aimTab = Window:Tab({ Name = "Aimbot", Icon = "crosshair", Description = "Full combat tab · v" .. bundleVersion })
 
 	local aimSec = aimTab:Section({ Name = "Aimbot", Icon = "target", Side = "Left" })
+	aimSec:Label("<b>Lock assist off by default.</b> Continuous mousemoverel matched Multihack gather bans. Enable Soft lock only on throwaway alts.")
 	aimSec:Toggle({
 		Name = "Aimbot enabled",
 		Default = false,
+		Risky = true,
 		Flag = "Fust_AimOn",
 		Callback = function(v)
 			Aim.aimbotEnabled = v
+			Aim:syncBind()
+		end,
+	})
+	aimSec:Toggle({
+		Name = "Soft lock assist",
+		Description = "Tiny mouse nudge ≤2px @ ~18Hz — ADS + hold key required. Still Risky.",
+		Default = false,
+		Risky = true,
+		Flag = "Fust_LockAssist",
+		DependsOn = "Fust_AimOn",
+		Callback = function(v)
+			Aim.lockAssist = v
 			Aim:syncBind()
 		end,
 	})
@@ -249,7 +263,7 @@ return function(deps)
 		Name = "Aimbot smoothing",
 		Min = 1,
 		Max = 100,
-		Default = 36,
+		Default = 72,
 		Increment = 0.1,
 		Flag = "Fust_AimSmooth",
 		Callback = function(v)
@@ -258,10 +272,10 @@ return function(deps)
 	})
 	aimSec:Slider({
 		Name = "Weapon aim FOV",
-		Description = "Screen radius (px) for target pick",
+		Description = "Screen radius (px) for target pick — keep small",
 		Min = 20,
 		Max = 400,
-		Default = 120,
+		Default = 55,
 		Increment = 0.1,
 		Flag = "Fust_WeaponFov",
 		Callback = function(v)
@@ -282,10 +296,10 @@ return function(deps)
 	})
 	aimSec:Slider({
 		Name = "Lock strength",
-		Description = "Max degrees per frame toward target",
-		Min = 2,
-		Max = 12,
-		Default = 6.5,
+		Description = "Soft assist cap (deg) — ignored when Soft lock off",
+		Min = 1,
+		Max = 5,
+		Default = 2.5,
 		Increment = 0.25,
 		Flag = "Fust_LockCap",
 		Callback = function(v)
@@ -294,51 +308,16 @@ return function(deps)
 	})
 
 	local silentSec = aimTab:Section({ Name = "Silent aim", Icon = "crosshair", Side = "Left" })
-	silentSec:Label("Camera snap on LMB (LOS raycast when Visible check is on). Not bullet redirect — GunControl hooks get you banned.")
+	silentSec:Label("<b>Silent disabled.</b> Camera/mouse silent and Shoot spoof are Multihack-tier on this AC (LookPitch). No-look silent is remote spoof — not shipped.")
 	silentSec:Toggle({
-		Name = "Silent aim (camera)",
-		Description = "Multi-step camera snap on fire + short hold",
+		Name = "Silent aim (disabled)",
+		Description = "No-op — kept for old configs",
 		Default = false,
 		Risky = true,
 		Flag = "Fust_SilentOn",
-		Callback = function(v)
-			Aim.silentOn = v
+		Callback = function()
+			Aim.silentOn = false
 			Aim:syncBind()
-		end,
-	})
-	silentSec:Slider({
-		Name = "Silent FOV",
-		Min = 15,
-		Max = 250,
-		Default = 90,
-		Increment = 1,
-		Flag = "Fust_SilentFovPx",
-		Callback = function(v)
-			Aim.silentFovPx = v
-		end,
-	})
-	silentSec:Slider({
-		Name = "Silent max degrees",
-		Description = "Cap per step — LookPitch flags big snaps; keep ≤5",
-		Min = 1,
-		Max = 8,
-		Default = 3.5,
-		Increment = 0.25,
-		Flag = "Fust_SilentMaxDeg",
-		Callback = function(v)
-			Aim.silentMaxDeg = v
-		end,
-	})
-	silentSec:Slider({
-		Name = "Silent steps",
-		Description = "Refine passes on each click",
-		Min = 1,
-		Max = 4,
-		Default = 2,
-		Increment = 1,
-		Flag = "Fust_SilentSteps",
-		Callback = function(v)
-			Aim.silentSteps = v
 		end,
 	})
 
@@ -391,9 +370,9 @@ return function(deps)
 	})
 	miscSec:Slider({
 		Name = "Mouse aim strength",
-		Min = 0.05,
-		Max = 0.6,
-		Default = 0.22,
+		Min = 0.02,
+		Max = 0.2,
+		Default = 0.08,
 		Increment = 0.01,
 		Flag = "Fust_MouseStr",
 		Callback = function(v)
@@ -453,8 +432,8 @@ return function(deps)
 	})
 	miscSec:Toggle({
 		Name = "Require ADS",
-		Description = "Gun/bow aim or RMB — off = always allow aim",
-		Default = false,
+		Description = "Gun/bow aim or RMB — keep on",
+		Default = true,
 		Flag = "Fust_AimAds",
 		Callback = function(v)
 			Aim.requireAds = v
@@ -462,46 +441,24 @@ return function(deps)
 	})
 
 	local trigSec = aimTab:Section({ Name = "Triggerbot", Icon = "mouse-pointer-click", Side = "Left" })
+	trigSec:Label("<b>Triggerbot disabled.</b> VirtualInput auto-click matched Multihack gather pattern.")
 	trigSec:Toggle({
-		Name = "Triggerbot enabled",
+		Name = "Triggerbot (disabled)",
+		Description = "No-op — kept for old configs",
 		Default = false,
 		Risky = true,
 		Flag = "Fust_TrigOn",
-		Callback = function(v)
-			Aim.triggerEnabled = v
+		Callback = function()
+			Aim.triggerEnabled = false
 			Aim:syncBind()
-		end,
-	})
-	trigSec:Dropdown({
-		Name = "Triggerbot bone selection",
-		Multi = true,
-		Default = { "Head" },
-		Options = { "Head", "Neck", "Chest", "Pelvis" },
-		Flag = "Fust_TrigBones",
-		Callback = function(v)
-			if type(v) == "table" and #v > 0 then
-				Aim.triggerBones = v
-			end
-		end,
-	})
-	trigSec:Slider({
-		Name = "Triggerbot delay",
-		Min = 0,
-		Max = 200,
-		Default = 10,
-		Increment = 1,
-		Suffix = " ms",
-		Flag = "Fust_TrigDelay",
-		Callback = function(v)
-			Aim.triggerDelayMs = v
 		end,
 	})
 
 	local keySec = aimTab:Section({ Name = "Keybinds", Icon = "keyboard", Side = "Right" })
 	keySec:Toggle({
 		Name = "Require hold key",
-		Description = "Off = locks whenever aimbot enabled",
-		Default = false,
+		Description = "On = must hold aim key (safer)",
+		Default = true,
 		Flag = "Fust_ReqHold",
 		Callback = function(v)
 			Aim.requireHoldKey = v
@@ -562,9 +519,12 @@ return function(deps)
 		end,
 	})
 
-	Aim.requireHoldKey = false
-	Aim.requireAds = false
+	Aim.requireHoldKey = true
+	Aim.requireAds = true
 	Aim.useMouseDrive = true
+	Aim.lockAssist = false
+	Aim.silentOn = false
+	Aim.triggerEnabled = false
 
 	local miscTab = Window:Tab({ Name = "Misc", Icon = "wrench", Description = "Farming helpers" })
 	local farmSec = miscTab:Section({ Name = "Gather", Icon = "axe", Side = "Left" })
@@ -639,6 +599,8 @@ return function(deps)
 		"Fust_AimKey2",
 		"Fust_TrigKey",
 		"Fust_AutoWeak",
+		"Fust_AimOn",
+		"Fust_LockAssist",
 	}
 
 	local function panic()
@@ -652,6 +614,7 @@ return function(deps)
 		end
 		-- Belt and braces: force the module off even if a flag is missing.
 		Aim.aimbotEnabled = false
+		Aim.lockAssist = false
 		Aim.silentOn = false
 		Aim.triggerEnabled = false
 		Aim.battleMode = false
