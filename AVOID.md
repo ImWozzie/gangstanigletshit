@@ -53,13 +53,13 @@ These are **especially** likely to trip Fust after GunControl / server validatio
 - **PlayerGui-only 2D ESP** — pooled frames; ~5 Hz; stop loop when off.
 - **Distance + target caps**, skeleton LOD, health bar only within short range slider.
 
-See `fust_prism_base_esp.luau`.
+See `modules/fust_esp.luau` (loaded by `loader/bootstrap.luau`).
 
 ---
 
 ## Prefer (lower profile) — aim (what this repo implements)
 
-All in **`fust_prism_base_esp.luau` → Aim tab**:
+All in **`modules/fust_shell.luau` → Aim tab** (logic in `modules/fust_aim.luau`):
 
 | Feature | Behavior |
 |---------|----------|
@@ -74,7 +74,7 @@ Defaults are conservative (assist off, snap off). **Test on an alt first.**
 
 ## Threading
 
-- Run Prism + bootstrap on **executor thread 8** (thread 2 breaks Prism `cloneref`).
+- Run **`loader/bootstrap.luau`** on **executor thread 8** (thread 2 breaks Prism `cloneref`).
 
 ---
 
