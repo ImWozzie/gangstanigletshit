@@ -38,8 +38,8 @@ return function(deps)
 		silentOn = false,
 		silentFovPx = 90,
 		silentStrength = 1,
-		silentMaxDeg = 8,
-		silentSteps = 3,
+		silentMaxDeg = 3.5, -- keep low: FustLook LookPitch samples camera pitch ~10Hz
+		silentSteps = 2,
 		triggerEnabled = false,
 		triggerBones = { "Head" },
 		triggerDelayMs = 10,
@@ -356,7 +356,7 @@ return function(deps)
 		return math.clamp(self.smoothing / 100, 0.03, 1)
 	end
 
-	-- Direct camera rotate — used by silent so the snap lands before the shot.
+	-- Capped camera rotate. Never hard lookAt — LookPitch telemeters asin(LookVector.Y).
 	function Aim:cameraSnapToward(cam, worldPos, capDeg)
 		local camPos = cam.CFrame.Position
 		local look = cam.CFrame.LookVector
@@ -373,7 +373,8 @@ return function(deps)
 		if px <= self.deadzonePx then
 			return true
 		end
-		local step = math.min(capDeg, ang)
+		local hardCap = math.min(capDeg or 3.5, 5)
+		local step = math.min(hardCap, ang)
 		local t = step / math.max(ang, 0.001)
 		cam.CFrame = CFrame.lookAt(camPos, camPos + look:Lerp(want, t).Unit)
 		return ang < 0.15
@@ -614,7 +615,7 @@ return function(deps)
 		end
 	end
 
-	-- Camera silent: snap cam onto target on fire. Raycast only for LOS when Visible check is on.
+	-- Camera silent: short capped pull on fire. Prefer mouse drive when enabled (LookPitch-safe).
 	function Aim:runSilentBurst(cam)
 		if not self.silentOn or not self:canAim() then
 			return
@@ -624,11 +625,14 @@ return function(deps)
 			return
 		end
 		self.stickyChar = ch
-		local cap = self.silentMaxDeg * self.silentStrength
-		local steps = math.clamp(math.floor(self.silentSteps + 0.5), 1, 6)
+		local cap = math.min(self.silentMaxDeg * self.silentStrength, 5)
+		local steps = math.clamp(math.floor(self.silentSteps + 0.5), 1, 4)
 		for _ = 1, steps do
-			self:cameraSnapToward(cam, pt, cap)
-			-- Re-project after each step so prediction stays accurate mid-snap.
+			if self.useMouseDrive then
+				self:mouseDriveToward(cam, pt)
+			else
+				self:cameraSnapToward(cam, pt, cap)
+			end
 			pt = select(1, self:bestPointOnChar(ch, self.targetBones, cam)) or pt
 		end
 	end

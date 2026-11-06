@@ -12,13 +12,16 @@ return function(deps)
 		autoWeak = false,
 		primeFresh = false, -- one swing at undamaged nodes to spawn a WeakSpot
 		maxDist = 8.5,
-		aimDeadzonePx = 14,
-		swingCooldownMs = 420,
+		aimDeadzonePx = 18,
+		aimCapDeg = 4.5, -- never instant lookAt — FustLook→LookPitch samples pitch ~10Hz
+		swingCdMs = 420,
 		requireTool = true,
 		nodeTypes = { "tree", "stone", "metal", "sulfur" }, -- empty = all
 		bound = false,
 		lastSwing = 0,
 		stickyNode = nil,
+		mouseRemX = 0,
+		mouseRemY = 0,
 	}
 
 	local typeSet = {}
@@ -90,13 +93,51 @@ return function(deps)
 		end)
 	end
 
+	-- Gradual aim only. Instant CFrame.lookAt jumps LookVector.Y between FustLook
+	-- samples (LookPitch every ≥0.1s) and is the likely Multihack path for gather.
 	local function aimAt(cam, worldPos)
-		local pos = cam.CFrame.Position
-		local want = worldPos - pos
-		if want.Magnitude < 0.05 then
+		local px = screenPx(cam, worldPos)
+		if px <= Misc.aimDeadzonePx then
 			return true
 		end
-		cam.CFrame = CFrame.lookAt(pos, worldPos)
+		local sp, on = cam:WorldToViewportPoint(worldPos)
+		if not on or sp.Z <= 0 then
+			return false
+		end
+		local vs = cam.ViewportSize
+		local cx, cy = vs.X * 0.5, vs.Y * 0.5
+		local dx, dy = sp.X - cx, sp.Y - cy
+		-- Prefer mouse deltas so FustPad/Look see human input; fall back to capped CFrame.
+		if type(mousemoverel) == "function" then
+			local factor = 0.28
+			local mx = dx * factor + Misc.mouseRemX
+			local my = dy * factor + Misc.mouseRemY
+			local sx = mx >= 0 and math.floor(mx) or math.ceil(mx)
+			local sy = my >= 0 and math.floor(my) or math.ceil(my)
+			if sx == 0 and math.abs(dx) > Misc.aimDeadzonePx * 0.4 then
+				sx = dx > 0 and 1 or -1
+			end
+			if sy == 0 and math.abs(dy) > Misc.aimDeadzonePx * 0.4 then
+				sy = dy > 0 and 1 or -1
+			end
+			Misc.mouseRemX = math.clamp(mx - sx, -1, 1)
+			Misc.mouseRemY = math.clamp(my - sy, -1, 1)
+			if sx ~= 0 or sy ~= 0 then
+				mousemoverel(sx, sy)
+			end
+		else
+			local pos = cam.CFrame.Position
+			local look = cam.CFrame.LookVector
+			local want = (worldPos - pos)
+			if want.Magnitude < 0.05 then
+				return true
+			end
+			want = want.Unit
+			local ang = math.deg(math.acos(math.clamp(look:Dot(want), -1, 1)))
+			local cap = Misc.aimCapDeg
+			local t = math.min(cap, ang) / math.max(ang, 0.001)
+			cam.CFrame = CFrame.lookAt(pos, pos + look:Lerp(want, t).Unit)
+		end
 		return screenPx(cam, worldPos) <= Misc.aimDeadzonePx
 	end
 
@@ -232,6 +273,8 @@ return function(deps)
 		end
 		self.bound = false
 		self.stickyNode = nil
+		self.mouseRemX = 0
+		self.mouseRemY = 0
 	end
 
 	function Misc:destroy()

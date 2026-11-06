@@ -144,7 +144,7 @@ Session context (same job `2de05adb-…`):
 
 **Conclusion:** treat **any Lighting Ambient/Brightness/Exposure raise** as ban-tier while ACM is on. Fullbright Lighting path is **disabled** in `fust_world.luau`. Camera colour filters / PointLights were safer for AC but weaker visually — do not bring Lighting paints back without proof ACM is off.
 
-**2026-11-06 14:17 (UTC+8) / 06:17 UTC — staff ban: Multihack (10 years).**
+**2026-11-06 14:17 (UTC+8) / 06:17 UTC — AC ban: Multihack (10 years). Clean alt — not linked to prior main.**
 
 Roblox player log `…T061215Z_Player_23A02_last.log`:
 
@@ -154,9 +154,17 @@ Error: Server Kick Message: Banned for Multihack; Metadata:
 Disconnect reason: 267
 ```
 
-This is **not** the automated FustSky `{ lt = … }` path. The custom meme reason + Multihack category is **moderator-issued**. Same afternoon as the Lighting Cheating ban; minutes after loading **v2.6.0** (Misc auto WeakSpot) on the live alpha. Client log has no MotionSync/lt subtype.
+Not Lighting `{ lt }`. **`Multihack` is a server ban label** (no client script emits that string as a detector). Timing: minutes after **v2.6.0** Misc auto WeakSpot which did **instant `Camera.CFrame = CFrame.lookAt(...)`** every Heartbeat.
 
-**Conclusion:** account/session was already under staff attention. Running the full Prism suite (ESP / aim / gather camera snaps) on a flagged main is enough for a hand Multihack ban — no single new ACM fingerprint required. Stop testing on that account.
+Readable detection that matches “instant look”:
+
+| Path | Behavior |
+|------|----------|
+| **`FustLook` → `Remotes.LookPitch`** | ≥0.1s: quantised `asin(Camera.LookVector.Y)` via `LookShared` (SCALE 90). Hard look snaps = huge pitch deltas. |
+| `FustFirstPerson` → `MotionSync {tp,cm}` | Bad camera mode/subject/head distance >3.5s |
+| `FustSky` → `MotionSync {xr,…}` | Translucent parts near cam (xray-ish) |
+
+**Conclusion:** treat **instant lookAt / uncapped camera snaps** as Multihack-tier. Use mouse deltas or ≤~4–5°/frame caps. Fixed in gather + silent (v2.6.2).
 
 ---
 

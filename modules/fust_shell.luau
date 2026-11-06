@@ -5,7 +5,7 @@ return function(deps)
 	local Aim = deps.Aim
 	local World = deps.World
 	local Misc = deps.Misc
-	local bundleVersion = deps.BundleVersion or "2.6.1"
+	local bundleVersion = deps.BundleVersion or "2.6.2"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false
@@ -319,10 +319,10 @@ return function(deps)
 	})
 	silentSec:Slider({
 		Name = "Silent max degrees",
-		Description = "Cap per snap step — keep modest to look less snapped",
-		Min = 2,
-		Max = 14,
-		Default = 8,
+		Description = "Cap per step — LookPitch flags big snaps; keep ≤5",
+		Min = 1,
+		Max = 8,
+		Default = 3.5,
 		Increment = 0.25,
 		Flag = "Fust_SilentMaxDeg",
 		Callback = function(v)
@@ -331,10 +331,10 @@ return function(deps)
 	})
 	silentSec:Slider({
 		Name = "Silent steps",
-		Description = "Camera refine passes on each click",
+		Description = "Refine passes on each click",
 		Min = 1,
-		Max = 6,
-		Default = 3,
+		Max = 4,
+		Default = 2,
 		Increment = 1,
 		Flag = "Fust_SilentSteps",
 		Callback = function(v)
@@ -568,10 +568,10 @@ return function(deps)
 
 	local miscTab = Window:Tab({ Name = "Misc", Icon = "wrench", Description = "Farming helpers" })
 	local farmSec = miscTab:Section({ Name = "Gather", Icon = "axe", Side = "Left" })
-	farmSec:Label("Auto-aims at node <b>WeakSpot</b> (red mark) and clicks — FustGather still fires Swing. WeakSpots only exist on damaged nodes.")
+	farmSec:Label("Aims at node <b>WeakSpot</b> via mouse / capped turn (not instant lookAt — LookPitch AC) then clicks. WeakSpots only on damaged nodes.")
 	farmSec:Toggle({
 		Name = "Auto hit red marks",
-		Description = "Camera snap to WeakSpot + LMB — melee range · obvious to watching staff",
+		Description = "Gradual aim + LMB — instant lookAt caused Multihack",
 		Default = false,
 		Risky = true,
 		Flag = "Fust_AutoWeak",

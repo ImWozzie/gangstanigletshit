@@ -15,18 +15,23 @@ Use this as a checklist when writing or running executor scripts against **Fust 
 | Character `LocalScript` (workspace rig) | Bytecode AC hook; console may show errors when injecting — treat as high risk. |
 | `FustSky` (PlayerScripts) | Owns Lighting/Atmosphere every frame **and** runs a lighting tamper check when `ReplicatedStorage.Fust:GetAttribute("ACM")` is true (see below). |
 
-### Telemetry / “handshake” remotes (do not break)
+### Telemetry remotes (observed client → server) — do not break
 
-These are **server-facing integrity paths**. Blocking, spoofing, or patching them is out of scope for this repo and is the fastest way to a permanent ban.
+Blocking/spoofing these is out of scope. **Ban reason strings like `Multihack` are assigned server-side** — they do not appear in readable client scripts (only practice UI copy in `FustAcLab`).
 
-| Signal | Observed use |
-|--------|----------------|
-| `Remotes.MotionSync` | Client → server reports (e.g. FustSky `{ lt = "…" }` lighting mismatch). |
-| `Remotes.FpsProbe` | Frame-time / stall stats when certain UIs open. |
-| AnimShield / CharSync internals | Obfuscated heartbeats / integrity — not reverse-engineered here. |
+| Signal | What the client actually sends |
+|--------|--------------------------------|
+| **`Remotes.LookPitch`** (Unreliable) | **`FustLook`**: every ≥**0.1 s**, `LookShared.Quantise(asin(clamp(Camera.LookVector.Y)))` (scale 90) → `FireServer(pitch[, facing])`. This is the live **look / pitch telemetry**. Instant `CFrame.lookAt` snaps create impossible pitch jumps between samples. |
+| **`Remotes.MotionSync`** | **FustSky** `{ lt = "…" }` lighting mismatch; **FustSky** `{ xr, xv, xf, xl }` translucent-part / xray-ish scan near camera (RANGE 90, MIN 3); **FustFirstPerson** `{ tp, cm }` when camera type/subject/head distance is wrong for **>3.5 s**. |
+| **`Remotes.FpsProbe`** | Frame-time / stall stats when certain UIs open. |
+| **`Remotes.CharSync`** / AnimShield | Obfuscated integrity — not readable. |
 | GunControl Verdicts | `debug.info` stack checks on fire callers. |
 
-**Rule:** leave shield scripts running. Do not `hookfunction` / `getconnections` / block FireServer / disable LocalScripts. Stay in PlayerGui + camera + VirtualInput only.
+**Rule:** leave shield scripts running. Do not hook/block these remotes. Prefer **`mousemoverel`** over hard camera `lookAt`. Cap any CFrame assist to a few degrees/frame.
+
+### Look / Multihack (2026-11-06)
+
+Clean alt banned **`Banned for Multihack`** (+ custom server message) minutes after **instant camera aim** (Misc WeakSpot `CFrame.lookAt`). No Lighting `{ lt }` in that session. Client has **no** `Multihack` detector string — server labels the ban after telemetry. Strongest readable path: **LookPitch pitch discontinuities** from instant look snaps. Gather/silent updated to mouse / capped turns (v2.6.2+).
 
 ### FustSky lighting check (fullbright / time changer)
 
@@ -111,9 +116,9 @@ Defaults are conservative (assist / silent / trigger off). **Test on an alt firs
 | **Prime fresh** | Optional: one click on undamaged nodes (no WeakSpot yet — attribute only appears after damage). |
 | **No Swing spoof** | Do not `FireServer` gather/Swing payloads yourself. |
 
-Keep range near melee (`castAim(9)` ≈ 9 studs). Panic clears this toggle.
+Keep range near melee (`castAim(9)` ≈ 9 studs). Panic clears this toggle. **Never instant `lookAt`** — use mouse / capped deg (LookPitch).
 
-**2026-11-06 14:17:** after enabling gather assist on live alpha, staff issued a **10-year Multihack** ban (`BRO THOUGHT HE WAS HIM…` + `Banned for Multihack`). That is a **hand ban**, not Lighting ACM. Do not treat Misc as “safe” on a watched account.
+**2026-11-06 14:17:** clean alt got **Multihack** after v2.6.0 instant WeakSpot `lookAt`. Fixed to mouse/capped aim in v2.6.2.
 
 ---
 
