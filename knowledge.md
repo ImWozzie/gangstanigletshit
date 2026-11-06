@@ -164,7 +164,7 @@ Readable detection that matches “instant look”:
 | `FustFirstPerson` → `MotionSync {tp,cm}` | Bad camera mode/subject/head distance >3.5s |
 | `FustSky` → `MotionSync {xr,…}` | Translucent parts near cam (xray-ish) |
 
-**Conclusion:** treat **instant lookAt / uncapped camera snaps** as Multihack-tier. Use mouse deltas or ≤~4–5°/frame caps. Fixed in gather + silent (v2.6.2).
+**Conclusion (updated 14:32):** mouse-drive + auto-click **also** Multihack’d a clean alt (`…T063029Z_Player_6E656_last.log` → `Multihack (10 years left, until 2036-11-03 06:32 UTC)`). Automated gather assist is **disabled** in-repo (v2.6.3), same as Lighting fullbright. Do not iterate gather bots on mains.
 
 ---
 

@@ -29,9 +29,14 @@ Blocking/spoofing these is out of scope. **Ban reason strings like `Multihack` a
 
 **Rule:** leave shield scripts running. Do not hook/block these remotes. Prefer **`mousemoverel`** over hard camera `lookAt`. Cap any CFrame assist to a few degrees/frame.
 
-### Look / Multihack (2026-11-06)
+### Look / Multihack (2026-11-06) — gather assist burned
 
-Clean alt banned **`Banned for Multihack`** (+ custom server message) minutes after **instant camera aim** (Misc WeakSpot `CFrame.lookAt`). No Lighting `{ lt }` in that session. Client has **no** `Multihack` detector string — server labels the ban after telemetry. Strongest readable path: **LookPitch pitch discontinuities** from instant look snaps. Gather/silent updated to mouse / capped turns (v2.6.2+).
+| Time | What ran | Ban |
+|------|----------|-----|
+| 14:17 | Misc WeakSpot **instant `CFrame.lookAt`** | Multihack 10y (clean alt) |
+| 14:32 | Misc WeakSpot **`mousemoverel` + auto LMB** (v2.6.2) | Multihack 10y (clean alt again) |
+
+`Multihack` is a **server** label (not in client scripts). Likely inputs: LookPitch discontinuities, and/or inhuman mouse+click+perfect weak-hit streaks. **Auto red-mark hit is disabled in-repo (v2.6.3)** — same policy as Lighting fullbright. Do not re-enable automated gather aim/click. Do not Swing-spoof.
 
 ### FustSky lighting check (fullbright / time changer)
 
@@ -108,17 +113,9 @@ Defaults are conservative (assist / silent / trigger off). **Test on an alt firs
 
 ---
 
-## Prefer (lower profile) — gather / Misc (v2.6.0+)
+## Gather / Misc — disabled
 
-| Feature | Behavior |
-|---------|----------|
-| **Auto hit red marks** | Aim camera at `Node:GetAttribute("WeakSpot")` (Vector3) and VirtualInput click. Game `FustGather` still owns `Remotes.Swing`. Weak hit server-side when impact is within **2 studs** of WeakSpot. |
-| **Prime fresh** | Optional: one click on undamaged nodes (no WeakSpot yet — attribute only appears after damage). |
-| **No Swing spoof** | Do not `FireServer` gather/Swing payloads yourself. |
-
-Keep range near melee (`castAim(9)` ≈ 9 studs). Panic clears this toggle. **Never instant `lookAt`** — use mouse / capped deg (LookPitch).
-
-**2026-11-06 14:17:** clean alt got **Multihack** after v2.6.0 instant WeakSpot `lookAt`. Fixed to mouse/capped aim in v2.6.2.
+Auto WeakSpot (red X) assist is a **no-op** after two Multihack bans (instant look + mouse drive). Keep researching only on throwaway alts; do not ship automated gather aim/click or Swing spoof.
 
 ---
 
