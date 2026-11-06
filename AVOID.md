@@ -23,7 +23,9 @@ Every 0.25 s it compares what it set (`want`) against live values. If any stays 
 - Darker than wanted is never flagged.
 - Writing these on Heartbeat also strobes, because FustSky rewrites them every frame.
 
-**Rule:** fullbright must not write Lighting/Atmosphere or delete their effects. `fust_world.luau` uses its own `ColorCorrectionEffect` under `CurrentCamera` instead (FustSky does not inspect camera children). Time changer is marked Risky — brightening the clock is reported.
+**Rule:** fullbright must not write Lighting/Atmosphere or delete their effects.
+
+**2026-11-06:** restoring Lighting Ambient/Brightness fullbright (even with post-FustSky re-apply to stop blinking) was followed by a **permanent `Cheating` ban** on the live alpha. Client log: `You are banned from Fust Survival: Cheating (permanently)`. Likely path: ACM → `MotionSync { lt = … }` → staff/auto. **Lighting fullbright is disabled in-repo.** Do not re-enable. Time changer (brighter ClockTime) remains Risky for the same check.
 
 Staff tooling (e.g. `FustAdminESP2`) uses **`Highlight` + `workspace.FustESPOutlines`** — do not mimic that unless you are staff.
 

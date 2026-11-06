@@ -4,7 +4,7 @@ return function(deps)
 	local Esp = deps.Esp
 	local Aim = deps.Aim
 	local World = deps.World
-	local bundleVersion = deps.BundleVersion or "2.4.8"
+	local bundleVersion = deps.BundleVersion or "2.4.9"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false
@@ -541,32 +541,18 @@ return function(deps)
 
 	local worldTab = Window:Tab({ Name = "World", Icon = "sun", Description = "Lighting & time" })
 	local lightSec = worldTab:Section({ Name = "Lighting", Icon = "sun", Side = "Left" })
+	lightSec:Label("<b>Fullbright disabled.</b> Lighting Ambient/Brightness writes were reported by FustSky (ACM → MotionSync) and led to a permanent Cheating ban on 2026-11-06. Do not re-enable.")
 	lightSec:Toggle({
-		Name = "Fullbright",
-		Description = "Real Lighting ambient/brightness — re-applied after FustSky so it doesn't blink",
+		Name = "Fullbright (disabled)",
+		Description = "No-op — kept so old configs do not crash",
 		Default = false,
 		Risky = true,
 		Flag = "Fust_Fullbright",
-		Callback = function(v)
-			World.fullbrightOn = v
+		Callback = function()
+			World.fullbrightOn = false
 			World:sync()
 		end,
 	})
-	lightSec:Slider({
-		Name = "Fullbright brightness",
-		Min = 0.5,
-		Max = 6,
-		Default = 2,
-		Increment = 0.1,
-		Flag = "Fust_FbBright2",
-		Callback = function(v)
-			World.brightness = v
-			if World.fullbrightOn then
-				World:sync()
-			end
-		end,
-	})
-	lightSec:Label("FustSky may still report brighter Lighting after ~3s while ACM is on. Use an alt.")
 	local timeSec = worldTab:Section({ Name = "Time", Icon = "clock", Side = "Right" })
 	timeSec:Label("Making night into day gets reported by FustSky after ~3s. Darker times are not flagged.")
 	timeSec:Toggle({

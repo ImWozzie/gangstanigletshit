@@ -126,6 +126,24 @@ Character attributes:
 
 The exact trigger is unknown. Most likely suspects, in order: the `require` of game modules (3), the interrupted ESP + frame-time test (5), the full `GetDescendants` pass (2) causing a frame stall the game's FPS probe can report.
 
+**2026-11-06 14:01 (UTC+8) / 06:01 UTC — permanent ban: `Cheating`.**
+
+Roblox player log `…T040130Z_Player_FEAAD_last.log`:
+
+```
+Error: Server Kick Message: You are banned from Fust Survival: Cheating (permanently); Metadata:
+Disconnect reason: 267 — You have been kicked from the game
+```
+
+Session context (same job `2de05adb-…`):
+
+1. Bundle aimbot/ESP/world loaded for hours on live alpha (`ClientShield=true`, `ACM=true`).
+2. ~minutes before the kick we restored **Lighting fullbright** (Ambient ≈ 0.71, Brightness 2, re-applied every RenderStepped after FustSky).
+3. FustSky ACM watches Ambient / OutdoorAmbient / Exposure / Brightness; after ~3s brighter-than-want it fires `Remotes.MotionSync:FireServer({ lt = … })` (throttled 300s).
+4. A mod then teleported / the server issued a permanent Cheating ban. Client log has **no** extra metadata beyond that string.
+
+**Conclusion:** treat **any Lighting Ambient/Brightness/Exposure raise** as ban-tier while ACM is on. Fullbright Lighting path is **disabled** in `fust_world.luau`. Camera colour filters / PointLights were safer for AC but weaker visually — do not bring Lighting paints back without proof ACM is off.
+
 ---
 
 ## 6. Rules for agents running anything in-game
