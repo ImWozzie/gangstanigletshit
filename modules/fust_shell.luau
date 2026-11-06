@@ -4,7 +4,7 @@ return function(deps)
 	local Esp = deps.Esp
 	local Aim = deps.Aim
 	local World = deps.World
-	local bundleVersion = deps.BundleVersion or "2.4.4"
+	local bundleVersion = deps.BundleVersion or "2.4.5"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false
@@ -543,7 +543,7 @@ return function(deps)
 	local lightSec = worldTab:Section({ Name = "Lighting", Icon = "sun", Side = "Left" })
 	lightSec:Toggle({
 		Name = "Fullbright",
-		Description = "Camera colour lift — does not touch Lighting (FustSky checks that)",
+		Description = "Real PointLights on camera — does not write Lighting (avoids FustSky)",
 		Default = false,
 		Flag = "Fust_Fullbright",
 		Callback = function(v)
@@ -552,14 +552,30 @@ return function(deps)
 		end,
 	})
 	lightSec:Slider({
-		Name = "Fullbright strength",
-		Min = 0.05,
-		Max = 0.6,
-		Default = 0.25,
-		Increment = 0.01,
-		Flag = "Fust_FbStrength",
+		Name = "Light brightness",
+		Min = 1,
+		Max = 20,
+		Default = 8,
+		Increment = 0.5,
+		Flag = "Fust_FbBright",
 		Callback = function(v)
 			World.brightness = v
+			if World.fullbrightOn then
+				World:sync()
+			end
+		end,
+	})
+	lightSec:Slider({
+		Name = "Light range",
+		Description = "How far the lights reach (studs)",
+		Min = 100,
+		Max = 2000,
+		Default = 500,
+		Increment = 25,
+		Suffix = " st",
+		Flag = "Fust_FbRange",
+		Callback = function(v)
+			World.range = v
 			if World.fullbrightOn then
 				World:sync()
 			end
