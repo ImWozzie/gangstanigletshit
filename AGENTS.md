@@ -30,6 +30,7 @@ Git push clone: **`C:\Users\Elliot\Desktop\gangstanigletshit-push`** (mirror pat
 | `modules/fust_aim.luau` | `return function(deps) → Aim` — aim/trigger/silent/crosshair only |
 | `modules/fust_shell.luau` | `return function(deps) → bundle` — **UI wiring only** (no game logic) |
 | `AVOID.md` | Anti-cheat notes — read before aim/ESP changes |
+| `knowledge.md` | Game data map (players, world folders, attributes), ESP feature ideas, incident log, in-game rules |
 | `README.md` | User-facing run instructions |
 
 **Deprecated:** `fust_prism_base_esp.luau` (monolith). Do not extend; point users to bootstrap.
