@@ -4,7 +4,7 @@ return function(deps)
 	local Esp = deps.Esp
 	local Aim = deps.Aim
 	local World = deps.World
-	local bundleVersion = deps.BundleVersion or "2.4.3"
+	local bundleVersion = deps.BundleVersion or "2.4.4"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false
@@ -199,13 +199,13 @@ return function(deps)
 		end,
 	})
 	rangeSec:Slider({
-		Name = "Update rate",
-		Description = "Higher is smoother, lower is lighter",
-		Min = 5,
-		Max = 60,
+		Name = "ESP FPS",
+		Description = "How often ESP redraws (30 light → 240 smooth)",
+		Min = 30,
+		Max = 240,
 		Default = 30,
 		Increment = 5,
-		Suffix = " Hz",
+		Suffix = " fps",
 		Flag = "Fust_EspRate",
 		Callback = function(v)
 			Esp.rate = v
