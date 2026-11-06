@@ -67,6 +67,17 @@ return function(deps)
 		_gunConn = nil,
 		_gunLast = 0,
 
+		-- Vault bowMods (input-side; infAmmo/true noGravity need hooks — not spoofed)
+		bowEnabled = false,
+		bowInstantCharge = true,
+		bowFastShot = false,
+		bowChargeTime = 0.05, -- draw hold before release when instant
+		bowFastGap = 0.12,
+		_bowConn = nil,
+		_bowState = "idle", -- idle | drawing | wait
+		_bowUntil = 0,
+		_bowWasDown = false,
+
 		-- info
 		invViewer = false,
 		invMaxDist = 2000,
@@ -426,9 +437,12 @@ return function(deps)
 			if not tool then
 				return
 			end
+			local id = string.lower(tostring(tool:GetAttribute("ItemId") or tool.Name))
+			if string.find(id, "bow", 1, true) then
+				return -- bows handled by syncBowMods
+			end
 			local holding = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
 			if self.gunAuto and not holding then
-				-- auto: keep firing while ADS / aimbot active feel — click when RMB or always if rapid
 				if not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
 					return
 				end
@@ -442,6 +456,88 @@ return function(deps)
 			end
 			self._gunLast = now
 			clickOnce()
+		end)
+	end
+
+	local function isBowTool(tool)
+		if not tool then
+			return false
+		end
+		local id = string.lower(tostring(tool:GetAttribute("ItemId") or tool.Name))
+		return string.find(id, "bow", 1, true) ~= nil or string.find(id, "crossbow", 1, true) ~= nil
+	end
+
+	local function mouseDown()
+		if type(mouse1press) == "function" then
+			mouse1press()
+			return
+		end
+		pcall(function()
+			game:GetService("VirtualInputManager"):SendMouseButtonEvent(0, 0, 0, true, game, 0)
+		end)
+	end
+
+	local function mouseUp()
+		if type(mouse1release) == "function" then
+			mouse1release()
+			return
+		end
+		pcall(function()
+			game:GetService("VirtualInputManager"):SendMouseButtonEvent(0, 0, 0, false, game, 0)
+		end)
+	end
+
+	function Misc:syncBowMods()
+		if self._bowConn then
+			self._bowConn:Disconnect()
+			self._bowConn = nil
+		end
+		self._bowState = "idle"
+		self._bowWasDown = false
+		if not self.bowEnabled then
+			return
+		end
+		self._bowConn = RunService.Heartbeat:Connect(function()
+			if not self.bowEnabled then
+				return
+			end
+			local char = LOCAL.Character
+			local tool = char and char:FindFirstChildOfClass("Tool")
+			if not isBowTool(tool) then
+				self._bowState = "idle"
+				return
+			end
+			local now = os.clock()
+			local down = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
+			-- Instant charge: on fresh M1, hold briefly then release (full-send draw).
+			if self.bowInstantCharge then
+				if down and not self._bowWasDown and self._bowState == "idle" then
+					self._bowState = "drawing"
+					self._bowUntil = now + (self.bowChargeTime or 0.05)
+					mouseDown()
+				elseif self._bowState == "drawing" and now >= self._bowUntil then
+					mouseUp()
+					self._bowState = self.bowFastShot and "wait" or "idle"
+					self._bowUntil = now + (self.bowFastGap or 0.12)
+				elseif self._bowState == "wait" and now >= self._bowUntil then
+					self._bowState = "idle"
+					if self.bowFastShot then
+						mouseDown()
+						self._bowState = "drawing"
+						self._bowUntil = now + (self.bowChargeTime or 0.05)
+					end
+				end
+			elseif self.bowFastShot then
+				-- Fast shot only: after user releases, auto start next draw.
+				if self._bowWasDown and not down and self._bowState == "idle" then
+					self._bowState = "wait"
+					self._bowUntil = now + (self.bowFastGap or 0.12)
+				elseif self._bowState == "wait" and now >= self._bowUntil then
+					self._bowState = "idle"
+					mouseDown()
+				end
+			end
+			self._bowWasDown = down
 		end)
 	end
 
@@ -681,6 +777,7 @@ return function(deps)
 		self:syncHitbox()
 		self:syncWallClimb()
 		self:syncGunMods()
+		self:syncBowMods()
 		self:syncInv()
 		self:syncTargetInfo()
 	end
@@ -707,6 +804,7 @@ return function(deps)
 		self.wallClimbEnabled = false
 		self.gunAuto = false
 		self.gunRapid = false
+		self.bowEnabled = false
 		self.autoWeak = false
 		self.invViewer = false
 		self.targetInfo = false
@@ -729,6 +827,10 @@ return function(deps)
 		if self._gunConn then
 			self._gunConn:Disconnect()
 			self._gunConn = nil
+		end
+		if self._bowConn then
+			self._bowConn:Disconnect()
+			self._bowConn = nil
 		end
 		restoreHitbox()
 		if invConn then

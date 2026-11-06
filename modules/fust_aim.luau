@@ -25,6 +25,13 @@ return function(deps)
 		prediction = true,
 		predictionTime = 0.12,
 		bulletSpeed = 900,
+		-- Aim as if projectile is hitscan (no travel lead). Does not change server bullets.
+		instantAim = false,
+		-- Bow ballistic — separate from gun prediction
+		bowPrediction = false,
+		bowSpeed = 280,
+		bowGravity = true,
+		bowGravityScale = 1,
 		targetBones = { "Head" },
 		smoothing = 2, -- Vault: divide screen error by this each frame
 		weaponFovPx = 220,
@@ -259,11 +266,26 @@ return function(deps)
 		return false
 	end
 
+	function Aim:holdingBow()
+		if LOCAL:GetAttribute("FustAimBow") == true then
+			return true
+		end
+		local char = LOCAL.Character
+		local tool = char and char:FindFirstChildOfClass("Tool")
+		if not tool then
+			return false
+		end
+		local id = string.lower(tostring(tool:GetAttribute("ItemId") or tool.Name))
+		return string.find(id, "bow", 1, true) ~= nil or string.find(id, "crossbow", 1, true) ~= nil
+	end
+
 	function Aim:predictPos(part, root, camPos)
 		if not part then
 			return nil
 		end
-		if not self.prediction then
+		local useBow = self.bowPrediction and self:holdingBow()
+		local useGun = self.prediction and not useBow
+		if not useBow and not useGun then
 			return part.Position
 		end
 		local vel = Vector3.zero
@@ -273,13 +295,26 @@ return function(deps)
 			vel = part.AssemblyLinearVelocity
 		end
 		local pos = part.Position
-		local origin = camPos or pos
-		local dist = (pos - origin).Magnitude
-		local t = dist / math.max(self.bulletSpeed or 900, 50)
-		if self.predictionTime and self.predictionTime > 0 and self.bulletSpeed <= 0 then
-			t = self.predictionTime
+		-- Hitscan aim: lock current bone (optional tiny velocity snap only).
+		if self.instantAim then
+			return pos
 		end
-		return pos + vel * t
+		local origin = camPos or pos
+		local speed = useBow and math.max(self.bowSpeed or 280, 40) or math.max(self.bulletSpeed or 900, 50)
+		local g = 0
+		if useBow and self.bowGravity then
+			g = workspace.Gravity * math.clamp(self.bowGravityScale or 1, 0, 2)
+		end
+		local aim = pos
+		local t = (aim - origin).Magnitude / speed
+		for _ = 1, 4 do
+			aim = pos + vel * t
+			if g > 0 then
+				aim = aim + Vector3.new(0, 0.5 * g * t * t, 0)
+			end
+			t = (aim - origin).Magnitude / speed
+		end
+		return aim
 	end
 
 	function Aim:screenDistPx(cam, worldPos)
@@ -427,6 +462,9 @@ return function(deps)
 		if dist <= self.deadzonePx then
 			return true
 		end
+		if type(mousemoverel) ~= "function" then
+			return false
+		end
 		local smooth = math.max(self.smoothing or 2, 1)
 		local str = math.clamp(self.mouseDriveStrength or 1, 0.1, 2)
 		local mx = (dx / smooth) * str + self.mouseRemX
@@ -441,14 +479,8 @@ return function(deps)
 		if sx == 0 and sy == 0 then
 			return dist <= self.deadzonePx * 2
 		end
-		if type(mousemoverel) == "function" then
-			mousemoverel(sx, sy)
-			return true
-		end
-		if self.useCameraAssist then
-			return self:cameraSnapToward(cam, worldPos, self.lockCapDeg)
-		end
-		return false
+		mousemoverel(sx, sy)
+		return true
 	end
 
 	function Aim:rotateToward(cam, worldPos, _capDeg)
@@ -630,10 +662,19 @@ return function(deps)
 			return
 		end
 		local bones = self.targetBones
-		local pt, ch = self:pickTarget(cam, self.silentFovPx, bones, self.stickyChar, self.silentMaxDist > 0 and self.silentMaxDist or self.maxDist)
-		if pt then
-			self.stickyChar = ch
-			self:rotateToward(cam, pt, self.lockCapDeg)
+		local maxD = (self.silentMaxDist and self.silentMaxDist > 0) and self.silentMaxDist or self.maxDist
+		local pt, ch = self:pickTarget(cam, self.silentFovPx, bones, self.stickyChar, maxD)
+		if not pt then
+			return
+		end
+		self.stickyChar = ch
+		-- Always drive hard: mouse first, camera fallback so silent works without mousemoverel.
+		local ok = false
+		if self.useMouseDrive then
+			ok = self:mouseDriveToward(cam, pt)
+		end
+		if not ok then
+			self:cameraSnapToward(cam, pt, math.max(self.lockCapDeg or 12, 18))
 		end
 	end
 
@@ -699,17 +740,20 @@ return function(deps)
 			self:updateVisuals(cam, dt)
 
 			local ran = false
-			if self:shouldRunAimbot() then
-				local pt, ch = self:pickTarget(cam, self.weaponFovPx, self.targetBones, self.stickyChar)
-				if pt then
-					self.stickyChar = ch
-					self:rotateToward(cam, pt, self.lockCapDeg)
-					ran = true
-				end
-			end
+			-- Silent first so it wins the frame when both are on.
 			if self:shouldRunSilent() then
 				self:runSilentBurst(cam)
 				ran = true
+			elseif self:shouldRunAimbot() then
+				local pt, ch = self:pickTarget(cam, self.weaponFovPx, self.targetBones, self.stickyChar)
+				if pt then
+					self.stickyChar = ch
+					local ok = self:rotateToward(cam, pt, self.lockCapDeg)
+					if not ok then
+						self:cameraSnapToward(cam, pt, self.lockCapDeg)
+					end
+					ran = true
+				end
 			end
 			if not ran and not self:aimKeysHeld() and not self:shouldRunSilent() then
 				self.stickyChar = nil

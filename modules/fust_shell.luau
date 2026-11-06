@@ -1,11 +1,11 @@
--- Prism menu — Vault-style tabs. factory(deps) -> bundle
+-- Prism menu shell. factory(deps) -> bundle
 return function(deps)
 	local Prism = deps.Prism
 	local Esp = deps.Esp
 	local Aim = deps.Aim
 	local World = deps.World
 	local Misc = deps.Misc
-	local bundleVersion = deps.BundleVersion or "2.9.0"
+	local bundleVersion = deps.BundleVersion or "2.9.5"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false
@@ -17,17 +17,14 @@ return function(deps)
 
 	local Window = Prism:CreateWindow({
 		Title = "Fust Hub",
-		Subtitle = "vault tabs · v" .. bundleVersion,
+		Subtitle = bundleVersion,
 		Footer = bundleVersion,
 		Intro = false,
 		ToggleKey = Enum.KeyCode.RightControl,
 		Size = Vector2.new(640, 640),
 	})
 
-	----------------------------------------------------------------------
-	-- Tab: Aimbot (Vault aiming + silent + trigger)
-	----------------------------------------------------------------------
-	local aimTab = Window:Tab({ Name = "Aimbot", Icon = "crosshair", Description = "Aim · silent · trigger" })
+	local aimTab = Window:Tab({ Name = "Aimbot", Icon = "crosshair" })
 
 	local aimSec = aimTab:Section({ Name = "Aiming", Icon = "target", Side = "Left" })
 	aimSec:Toggle({
@@ -49,6 +46,14 @@ return function(deps)
 			Aim.prediction = v
 		end,
 	})
+	aimSec:Toggle({
+		Name = "Instant",
+		Default = false,
+		Flag = "Fust_InstantAim",
+		Callback = function(v)
+			Aim.instantAim = v
+		end,
+	})
 	aimSec:Slider({
 		Name = "Bullet speed",
 		Min = 100,
@@ -56,6 +61,7 @@ return function(deps)
 		Default = 900,
 		Increment = 10,
 		Flag = "Fust_BulletSpeed",
+		DependsOn = "Fust_AimPred",
 		Callback = function(v)
 			Aim.bulletSpeed = v
 		end,
@@ -74,7 +80,6 @@ return function(deps)
 	})
 	aimSec:Slider({
 		Name = "Smoothing",
-		Description = "Vault: lower = stickier",
 		Min = 1,
 		Max = 20,
 		Default = 2,
@@ -130,6 +135,83 @@ return function(deps)
 			Aim.ignoreTeam = v
 		end,
 	})
+	aimSec:Toggle({
+		Name = "Require hold key",
+		Default = false,
+		Flag = "Fust_ReqHold",
+		Callback = function(v)
+			Aim.requireHoldKey = v
+		end,
+	})
+	aimSec:Toggle({
+		Name = "Aim key",
+		Default = false,
+		Flag = "Fust_AimKey1",
+		Mode = "Hold",
+		Keybind = Enum.KeyCode.B,
+		Callback = function(v)
+			Aim.aimKey1Held = v
+		end,
+		KeyChanged = function(key)
+			Aim.aimKey1 = key
+		end,
+	})
+	aimSec:Toggle({
+		Name = "Aim key 2",
+		Default = false,
+		Flag = "Fust_AimKey2",
+		Mode = "Hold",
+		Keybind = Enum.KeyCode.V,
+		Callback = function(v)
+			Aim.aimKey2Held = v
+		end,
+		KeyChanged = function(key)
+			Aim.aimKey2 = key
+		end,
+	})
+
+	local bowAimSec = aimTab:Section({ Name = "Bow", Icon = "target", Side = "Left" })
+	bowAimSec:Toggle({
+		Name = "Bow prediction",
+		Default = false,
+		Flag = "Fust_BowPred",
+		Callback = function(v)
+			Aim.bowPrediction = v
+		end,
+	})
+	bowAimSec:Toggle({
+		Name = "Gravity",
+		Default = true,
+		Flag = "Fust_BowGrav",
+		DependsOn = "Fust_BowPred",
+		Callback = function(v)
+			Aim.bowGravity = v
+		end,
+	})
+	bowAimSec:Slider({
+		Name = "Arrow speed",
+		Min = 80,
+		Max = 600,
+		Default = 280,
+		Increment = 5,
+		Flag = "Fust_BowSpeed",
+		DependsOn = "Fust_BowPred",
+		Callback = function(v)
+			Aim.bowSpeed = v
+		end,
+	})
+	bowAimSec:Slider({
+		Name = "Gravity scale",
+		Min = 0,
+		Max = 2,
+		Default = 1,
+		Increment = 0.05,
+		Flag = "Fust_BowGravScale",
+		DependsOn = "Fust_BowGrav",
+		Callback = function(v)
+			Aim.bowGravityScale = v
+		end,
+	})
 
 	local silentSec = aimTab:Section({ Name = "Silent aim", Icon = "crosshair", Side = "Left" })
 	silentSec:Toggle({
@@ -158,6 +240,7 @@ return function(deps)
 		Default = 220,
 		Increment = 1,
 		Flag = "Fust_SilentFov",
+		DependsOn = "Fust_SilentOn",
 		Callback = function(v)
 			Aim.silentFovPx = v
 		end,
@@ -169,6 +252,7 @@ return function(deps)
 		Default = 525,
 		Increment = 5,
 		Flag = "Fust_SilentDist",
+		DependsOn = "Fust_SilentOn",
 		Callback = function(v)
 			Aim.silentMaxDist = v
 		end,
@@ -192,8 +276,23 @@ return function(deps)
 		Default = 10,
 		Increment = 1,
 		Flag = "Fust_TrigDelay",
+		DependsOn = "Fust_TrigOn",
 		Callback = function(v)
 			Aim.triggerDelayMs = v
+		end,
+	})
+	trigSec:Toggle({
+		Name = "Trigger key",
+		Default = false,
+		Flag = "Fust_TrigKey",
+		Mode = "Hold",
+		Keybind = Enum.KeyCode.B,
+		DependsOn = "Fust_TrigOn",
+		Callback = function(v)
+			Aim.triggerKeyHeld = v
+		end,
+		KeyChanged = function(key)
+			Aim.triggerKey = key
 		end,
 	})
 
@@ -272,14 +371,6 @@ return function(deps)
 		end,
 	})
 	aimMisc:Toggle({
-		Name = "Require hold key",
-		Default = false,
-		Flag = "Fust_ReqHold",
-		Callback = function(v)
-			Aim.requireHoldKey = v
-		end,
-	})
-	aimMisc:Toggle({
 		Name = "Battlemode",
 		Default = true,
 		Risky = true,
@@ -303,51 +394,10 @@ return function(deps)
 		end,
 	})
 
-	local keySec = aimTab:Section({ Name = "Keybinds", Icon = "keyboard", Side = "Right" })
-	keySec:Toggle({
-		Name = "Aim key",
-		Default = false,
-		Flag = "Fust_AimKey1",
-		Mode = "Hold",
-		Keybind = Enum.KeyCode.B,
-		Callback = function(v)
-			Aim.aimKey1Held = v
-		end,
-		KeyChanged = function(key)
-			Aim.aimKey1 = key
-		end,
-	})
-	keySec:Toggle({
-		Name = "Aim key 2",
-		Default = false,
-		Flag = "Fust_AimKey2",
-		Mode = "Hold",
-		Keybind = Enum.KeyCode.V,
-		Callback = function(v)
-			Aim.aimKey2Held = v
-		end,
-		KeyChanged = function(key)
-			Aim.aimKey2 = key
-		end,
-	})
-	keySec:Toggle({
-		Name = "Trigger key",
-		Default = false,
-		Flag = "Fust_TrigKey",
-		Mode = "Hold",
-		Keybind = Enum.KeyCode.B,
-		Callback = function(v)
-			Aim.triggerKeyHeld = v
-		end,
-		KeyChanged = function(key)
-			Aim.triggerKey = key
-		end,
-	})
-
 	----------------------------------------------------------------------
 	-- Tab: Visuals (player ESP)
 	----------------------------------------------------------------------
-	local visTab = Window:Tab({ Name = "Visuals", Icon = "eye", Description = "Player ESP" })
+	local visTab = Window:Tab({ Name = "Visuals", Icon = "eye" })
 	local mainSec = visTab:Section({ Name = "Master", Icon = "toggle-right", Side = "Left" })
 	local holdOn, toggleOn = false, false
 	local function syncMaster()
@@ -519,9 +569,9 @@ return function(deps)
 	----------------------------------------------------------------------
 	-- Tab: World
 	----------------------------------------------------------------------
-	local worldTab = Window:Tab({ Name = "World", Icon = "globe", Description = "Loot · nodes · NPCs" })
-	local wEspSec = worldTab:Section({ Name = "World ESP", Icon = "map-pin", Side = "Left" })
-	wEspSec:Toggle({
+	local worldTab = Window:Tab({ Name = "World", Icon = "globe" })
+	local wMaster = worldTab:Section({ Name = "Master", Icon = "toggle-right", Side = "Left" })
+	wMaster:Toggle({
 		Name = "Enabled",
 		Default = false,
 		Flag = "Fust_WorldEsp",
@@ -529,7 +579,7 @@ return function(deps)
 			World:setEsp(v)
 		end,
 	})
-	wEspSec:Slider({
+	wMaster:Slider({
 		Name = "Max distance",
 		Min = 50,
 		Max = 2500,
@@ -540,7 +590,7 @@ return function(deps)
 			World.maxDist = v
 		end,
 	})
-	wEspSec:Slider({
+	wMaster:Slider({
 		Name = "Rate (Hz)",
 		Min = 5,
 		Max = 30,
@@ -551,7 +601,7 @@ return function(deps)
 			World.rate = v
 		end,
 	})
-	wEspSec:Slider({
+	wMaster:Slider({
 		Name = "Font size",
 		Min = 10,
 		Max = 18,
@@ -563,8 +613,8 @@ return function(deps)
 		end,
 	})
 
-	local function worldToggle(name, flag, key)
-		wEspSec:Toggle({
+	local function worldToggle(sec, name, flag, key)
+		sec:Toggle({
 			Name = name,
 			Default = World.toggles[key] == true,
 			Flag = flag,
@@ -574,40 +624,50 @@ return function(deps)
 			end,
 		})
 	end
-	worldToggle("Trees", "Fust_W_Trees", "trees")
-	worldToggle("Stone", "Fust_W_Stone", "stone")
-	worldToggle("Metal", "Fust_W_Metal", "metal")
-	worldToggle("Sulfur", "Fust_W_Sulfur", "sulfur")
-	worldToggle("Hemp", "Fust_W_Hemp", "hemp")
-	worldToggle("Food", "Fust_W_Food", "food")
-	worldToggle("Mushroom", "Fust_W_Mushroom", "mushroom")
-	worldToggle("Wood piles", "Fust_W_Woodpile", "woodpile")
-	worldToggle("Loot barrels", "Fust_W_Barrel", "loot_barrel")
-	worldToggle("Loot crates", "Fust_W_Crate", "loot_crate")
-	worldToggle("Military crates", "Fust_W_Mil", "military_crate")
-	worldToggle("Elite crates", "Fust_W_Elite", "elite_crate")
-	worldToggle("Wooden boxes", "Fust_W_Box", "wooden_box")
-	worldToggle("Large boxes", "Fust_W_LBox", "large_box")
-	worldToggle("Sleepers", "Fust_W_Sleeper", "sleeper")
-	worldToggle("NPCs", "Fust_W_Npc", "npc")
-	worldToggle("Bear", "Fust_W_Bear", "bear")
-	worldToggle("Boar", "Fust_W_Boar", "boar")
-	worldToggle("Deer", "Fust_W_Deer", "deer")
-	worldToggle("Turrets", "Fust_W_Turret", "auto_turret")
-	worldToggle("Traps", "Fust_W_Trap", "shotgun_trap")
-	worldToggle("Landmines", "Fust_W_Mine", "landmine")
-	worldToggle("ATV", "Fust_W_Atv", "atv")
-	worldToggle("Minicopter", "Fust_W_Heli", "minicopter")
-	worldToggle("Airdrop", "Fust_W_Air", "airdrop")
-	worldToggle("Backpacks", "Fust_W_Pack", "backpack")
-	worldToggle("World items", "Fust_W_Item", "world_item")
-	worldToggle("Tool cupboard", "Fust_W_TC", "tool_cupboard")
-	worldToggle("Patrol heli", "Fust_W_Patrol", "patrol_heli")
+
+	local wFarm = worldTab:Section({ Name = "Farming", Icon = "axe", Side = "Left" })
+	worldToggle(wFarm, "Trees", "Fust_W_Trees", "trees")
+	worldToggle(wFarm, "Stone", "Fust_W_Stone", "stone")
+	worldToggle(wFarm, "Metal", "Fust_W_Metal", "metal")
+	worldToggle(wFarm, "Sulfur", "Fust_W_Sulfur", "sulfur")
+	worldToggle(wFarm, "Hemp", "Fust_W_Hemp", "hemp")
+	worldToggle(wFarm, "Food", "Fust_W_Food", "food")
+	worldToggle(wFarm, "Mushroom", "Fust_W_Mushroom", "mushroom")
+	worldToggle(wFarm, "Wood piles", "Fust_W_Woodpile", "woodpile")
+
+	local wLoot = worldTab:Section({ Name = "Loot", Icon = "package", Side = "Right" })
+	worldToggle(wLoot, "Loot barrels", "Fust_W_Barrel", "loot_barrel")
+	worldToggle(wLoot, "Loot crates", "Fust_W_Crate", "loot_crate")
+	worldToggle(wLoot, "Military crates", "Fust_W_Mil", "military_crate")
+	worldToggle(wLoot, "Elite crates", "Fust_W_Elite", "elite_crate")
+	worldToggle(wLoot, "Wooden boxes", "Fust_W_Box", "wooden_box")
+	worldToggle(wLoot, "Large boxes", "Fust_W_LBox", "large_box")
+	worldToggle(wLoot, "Backpacks", "Fust_W_Pack", "backpack")
+	worldToggle(wLoot, "World items", "Fust_W_Item", "world_item")
+	worldToggle(wLoot, "Airdrop", "Fust_W_Air", "airdrop")
+
+	local wMobs = worldTab:Section({ Name = "Mobs", Icon = "skull", Side = "Left" })
+	worldToggle(wMobs, "NPCs", "Fust_W_Npc", "npc")
+	worldToggle(wMobs, "Bear", "Fust_W_Bear", "bear")
+	worldToggle(wMobs, "Boar", "Fust_W_Boar", "boar")
+	worldToggle(wMobs, "Deer", "Fust_W_Deer", "deer")
+	worldToggle(wMobs, "Sleepers", "Fust_W_Sleeper", "sleeper")
+
+	local wThreat = worldTab:Section({ Name = "Deployables", Icon = "shield", Side = "Right" })
+	worldToggle(wThreat, "Turrets", "Fust_W_Turret", "auto_turret")
+	worldToggle(wThreat, "Traps", "Fust_W_Trap", "shotgun_trap")
+	worldToggle(wThreat, "Landmines", "Fust_W_Mine", "landmine")
+	worldToggle(wThreat, "Tool cupboard", "Fust_W_TC", "tool_cupboard")
+
+	local wVeh = worldTab:Section({ Name = "Vehicles", Icon = "car", Side = "Left" })
+	worldToggle(wVeh, "ATV", "Fust_W_Atv", "atv")
+	worldToggle(wVeh, "Minicopter", "Fust_W_Heli", "minicopter")
+	worldToggle(wVeh, "Patrol heli", "Fust_W_Patrol", "patrol_heli")
 
 	----------------------------------------------------------------------
 	-- Tab: Misc (farm / combat / movement / guns)
 	----------------------------------------------------------------------
-	local miscTab = Window:Tab({ Name = "Misc", Icon = "wrench", Description = "Farm · combat · movement" })
+	local miscTab = Window:Tab({ Name = "Misc", Icon = "wrench" })
 
 	local farmSec = miscTab:Section({ Name = "Farm aura", Icon = "axe", Side = "Left" })
 	farmSec:Toggle({
@@ -737,10 +797,8 @@ return function(deps)
 	})
 
 	local gunSec = miscTab:Section({ Name = "Gun mods", Icon = "crosshair", Side = "Right" })
-	gunSec:Label("Input-only (auto / rapid click). Vault nospread/nokick need GunControl hooks — not mirrored.")
 	gunSec:Toggle({
 		Name = "Auto fire",
-		Description = "Click while ADS (RMB)",
 		Default = false,
 		Risky = true,
 		Flag = "Fust_GunAuto",
@@ -773,6 +831,70 @@ return function(deps)
 		Callback = function(v)
 			if Misc then
 				Misc.gunRapidRate = v
+			end
+		end,
+	})
+
+	local bowModSec = miscTab:Section({ Name = "Bow mods", Icon = "target", Side = "Right" })
+	bowModSec:Toggle({
+		Name = "Enabled",
+		Default = false,
+		Risky = true,
+		Flag = "Fust_BowMods",
+		Callback = function(v)
+			if Misc then
+				Misc.bowEnabled = v
+				Misc:syncBowMods()
+			end
+		end,
+	})
+	bowModSec:Toggle({
+		Name = "Instant charge",
+		Default = true,
+		Flag = "Fust_BowInstant",
+		DependsOn = "Fust_BowMods",
+		Callback = function(v)
+			if Misc then
+				Misc.bowInstantCharge = v
+			end
+		end,
+	})
+	bowModSec:Toggle({
+		Name = "Fast shot",
+		Default = false,
+		Flag = "Fust_BowFast",
+		DependsOn = "Fust_BowMods",
+		Callback = function(v)
+			if Misc then
+				Misc.bowFastShot = v
+			end
+		end,
+	})
+	bowModSec:Slider({
+		Name = "Charge time",
+		Min = 0.02,
+		Max = 0.5,
+		Default = 0.05,
+		Increment = 0.01,
+		Flag = "Fust_BowCharge",
+		DependsOn = "Fust_BowInstant",
+		Callback = function(v)
+			if Misc then
+				Misc.bowChargeTime = v
+			end
+		end,
+	})
+	bowModSec:Slider({
+		Name = "Fast gap",
+		Min = 0.05,
+		Max = 0.5,
+		Default = 0.12,
+		Increment = 0.01,
+		Flag = "Fust_BowFastGap",
+		DependsOn = "Fust_BowFast",
+		Callback = function(v)
+			if Misc then
+				Misc.bowFastGap = v
 			end
 		end,
 	})
@@ -849,7 +971,7 @@ return function(deps)
 	----------------------------------------------------------------------
 	-- Tab: Camera
 	----------------------------------------------------------------------
-	local camTab = Window:Tab({ Name = "Camera", Icon = "camera", Description = "Zoom · freecam · TP" })
+	local camTab = Window:Tab({ Name = "Camera", Icon = "camera" })
 	local camSec = camTab:Section({ Name = "Camera", Icon = "camera", Side = "Left" })
 	camSec:Toggle({
 		Name = "Zoom (hold)",
@@ -937,7 +1059,7 @@ return function(deps)
 	----------------------------------------------------------------------
 	-- Tab: Settings
 	----------------------------------------------------------------------
-	local setTab = Window:Tab({ Name = "Settings", Icon = "settings", Description = "Panic · unload" })
+	local setTab = Window:Tab({ Name = "Settings", Icon = "settings" })
 
 	Aim.requireHoldKey = false
 	Aim.requireAds = false
@@ -950,6 +1072,10 @@ return function(deps)
 	Aim.silentFovPx = 220
 	Aim.prediction = true
 	Aim.bulletSpeed = 900
+	Aim.instantAim = false
+	Aim.bowPrediction = false
+	Aim.bowSpeed = 280
+	Aim.bowGravity = true
 
 	local RISKY_FLAGS = {
 		"Fust_AimOn",
@@ -966,6 +1092,7 @@ return function(deps)
 		"Fust_WallClimb",
 		"Fust_GunAuto",
 		"Fust_GunRapid",
+		"Fust_BowMods",
 		"Fust_Freecam",
 		"Fust_Tp3",
 	}
@@ -997,6 +1124,7 @@ return function(deps)
 			Misc.wallClimbEnabled = false
 			Misc.gunAuto = false
 			Misc.gunRapid = false
+			Misc.bowEnabled = false
 			Misc:syncBind()
 		end
 		if World then
@@ -1008,16 +1136,16 @@ return function(deps)
 		pcall(function()
 			Prism:Notify({
 				Title = "Panic",
-				Content = "Combat / movement / camera cleared. ESP stays.",
+				Content = "Off",
 				Type = "Warning",
-				Duration = 4,
+				Duration = 2,
 			})
 		end)
 	end
 
 	local safeSec = setTab:Section({ Name = "Safety", Icon = "shield", Side = "Left" })
 	safeSec:Button({
-		Name = "Panic now",
+		Name = "Panic",
 		Icon = "shield-off",
 		Callback = panic,
 	})
@@ -1039,9 +1167,8 @@ return function(deps)
 	})
 
 	local sysSec = setTab:Section({ Name = "Script", Icon = "power", Side = "Right" })
-	sysSec:Label("v" .. bundleVersion .. " · Aimbot · Visuals · World · Misc · Camera")
 	sysSec:Button({
-		Name = "Refresh from GitHub",
+		Name = "Refresh",
 		Icon = "refresh-cw",
 		Callback = function()
 			local url = "https://raw.githubusercontent.com/ImWozzie/gangstanigletshit/main/loader/bootstrap.luau?v=" .. bundleVersion
@@ -1057,7 +1184,7 @@ return function(deps)
 		Name = "Unload",
 		Icon = "trash-2",
 		Hold = 1.2,
-		HoldText = "Hold to unload...",
+		HoldText = "Hold...",
 		Callback = function()
 			Window:Unload()
 		end,
