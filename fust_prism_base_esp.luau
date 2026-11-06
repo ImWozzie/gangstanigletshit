@@ -9,7 +9,6 @@ local MAX_TARGETS = 12
 local TICK = 0.18
 local SKEL_MAX_DIST = 400
 local HP_MIN_DIST = 35
-local HP_MAX_DIST = 2500
 local OVERLAY_NAME = "FustBaseEsp"
 
 -- Subset of bones for medium range (cheaper, still reads as skeleton)
@@ -76,6 +75,7 @@ local Esp = {
 	name = true,
 	distance = true,
 	healthBar = true,
+	healthBarMaxDist = 50,
 	healthText = false,
 	color = Color3.fromRGB(235, 235, 235),
 }
@@ -290,7 +290,7 @@ local function shouldShowHealth(dist, boxHeightPx)
 	if not Esp.healthBar then
 		return false
 	end
-	if dist < HP_MIN_DIST or dist > HP_MAX_DIST then
+	if dist < HP_MIN_DIST or dist > Esp.healthBarMaxDist then
 		return false
 	end
 	if boxHeightPx and boxHeightPx < 12 then
@@ -568,9 +568,24 @@ end })
 featSec:Toggle({ Name = "Distance", Default = true, Flag = "Fust_EspDist", Callback = function(v)
 	Esp.distance = v
 end })
-featSec:Toggle({ Name = "Health bar", Description = "Side bar; hidden only inside 35 studs", Default = true, Flag = "Fust_EspHpBar", Callback = function(v)
+featSec:Toggle({ Name = "Health bar", Description = "Only within HP range below", Default = true, Flag = "Fust_EspHpBar", Callback = function(v)
 	Esp.healthBar = v
 end })
+
+featSec:Slider({
+	Name = "Health bar range",
+	Description = "Max studs to draw HP bar (not full ESP range)",
+	Min = 25,
+	Max = 400,
+	Default = 50,
+	Increment = 5,
+	Suffix = " st",
+	Flag = "Fust_EspHpRange",
+	Callback = function(v)
+		Esp.healthBarMaxDist = v
+	end,
+})
+
 featSec:Toggle({ Name = "Health text", Default = false, Flag = "Fust_EspHpTxt", Callback = function(v)
 	Esp.healthText = v
 end })
