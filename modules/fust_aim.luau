@@ -1,4 +1,4 @@
--- Fust aim module (camera-only). Returns factory(deps) -> Aim
+-- Fust aim module (camera-only, no GunControl hooks). factory(deps) -> Aim
 return function(deps)
 	local Players = deps.Players
 	local RunService = deps.RunService
@@ -6,57 +6,74 @@ return function(deps)
 	local LOCAL = deps.LocalPlayer
 
 	local AIM_RENDER = "FustSafeAimAssist"
-	local FOV_SEGMENTS = 48
+	local FOV_SEGMENTS = 56
+	local TRIGGER_COOLDOWN = 0.05
+
+	local BONE_ALIASES = {
+		Head = "Head",
+		Neck = "Neck",
+		Chest = "UpperTorso",
+		Pelvis = "LowerTorso",
+		["HumanoidRootPart"] = "HumanoidRootPart",
+	}
 
 	local Aim = {
-		assistOn = false,
-		snapOn = false,
-		silentOn = false,
-		lockEnabled = false,
-		lockHeld = false,
-		requireAds = true,
+		aimbotEnabled = false,
+		prediction = false,
+		predictionTime = 0.12,
+		targetBones = { "Head" },
+		smoothing = 36,
+		weaponFovPx = 120,
 		maxDist = 450,
-		fov = 5,
-		lockFov = 8,
-		snapFov = 2.5,
-		silentFov = 3.5,
-		strength = 0.12,
-		lockStrength = 0.55,
+		deadzonePx = 3,
+		visibleCheck = false,
+		ignoreKnocked = true,
+		ignoreTeam = true,
+		drawFov = true,
+		filledFov = false,
+		silentOn = false,
+		silentFovPx = 90,
 		silentStrength = 0.92,
-		maxDegPerFrame = 0.65,
-		lockMaxDeg = 2.8,
-		snapMaxDeg = 2.2,
 		silentMaxDeg = 3.5,
-		bone = "Head",
-		showFov = true,
+		triggerEnabled = false,
+		triggerBones = { "Head" },
+		triggerDelayMs = 10,
+		triggerKeyHeld = false,
+		aimKey1Held = false,
+		aimKey2Held = false,
+		battleMode = false,
+		requireAds = true,
 		showCrosshair = true,
+		visualCheck = false,
 		crossSize = 10,
 		crossGap = 4,
 		crossThick = 2,
-		crossColor = Color3.fromRGB(240, 240, 245),
-		fovRingColor = Color3.fromRGB(240, 240, 245),
-		fovVisualDeg = 8,
-		visualCheck = false,
+		crossColor = Color3.fromRGB(235, 70, 70),
+		fovRingColor = Color3.fromRGB(235, 70, 70),
+		fovFillTransparency = 0.82,
 		bound = false,
+		stickyChar = nil,
+		firingSilent = false,
+		lastTrigger = 0,
+		triggerAcc = 0,
 		inputBeganConn = nil,
 		inputEndedConn = nil,
-		lockedPt = nil,
-		firingSilent = false,
 	}
 
 	local crossGui
 	local crossParts = {}
 	local fovRing = {}
+	local fovFill
 	local statusLabel
 
 	local function isActive()
-		return Aim.lockEnabled
-			or Aim.assistOn
-			or Aim.snapOn
-			or Aim.silentOn
+		return Aim.drawFov
+			or Aim.filledFov
 			or Aim.showCrosshair
-			or Aim.showFov
 			or Aim.visualCheck
+			or Aim.aimbotEnabled
+			or Aim.silentOn
+			or Aim.triggerEnabled
 	end
 
 	function Aim:isAds()
@@ -67,38 +84,143 @@ return function(deps)
 	end
 
 	function Aim:canAim()
+		if self.battleMode then
+			return true
+		end
 		if not self.requireAds then
 			return true
 		end
 		return self:isAds()
 	end
 
-	function Aim:aimPoint(char)
-		local p = char:FindFirstChild(self.bone) or char:FindFirstChild("Head") or char:FindFirstChild("UpperTorso")
+	function Aim:aimKeysHeld()
+		return self.aimKey1Held or self.aimKey2Held
+	end
+
+	function Aim:shouldRunAimbot()
+		return self.aimbotEnabled and self:aimKeysHeld() and self:canAim()
+	end
+
+	function Aim:resolveBoneName(alias)
+		return BONE_ALIASES[alias] or alias
+	end
+
+	function Aim:getBonePart(char, alias)
+		local name = self:resolveBoneName(alias)
+		local p = char:FindFirstChild(name)
 		if p and p:IsA("BasePart") then
-			return p.Position + Vector3.new(0, 0.08, 0)
+			return p
 		end
-		return nil
+		if name == "Neck" then
+			p = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso")
+			if p then
+				return p
+			end
+		end
+		return char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
+	end
+
+	function Aim:isKnocked(plr, hum, char)
+		if hum.Health <= 0 then
+			return true
+		end
+		if plr:GetAttribute("Knocked") == true or char:GetAttribute("Knocked") == true then
+			return true
+		end
+		if hum:GetAttribute("Downed") == true or char:GetAttribute("Downed") == true then
+			return true
+		end
+		local st = hum:GetState()
+		if st == Enum.HumanoidStateType.Dead then
+			return true
+		end
+		return false
+	end
+
+	function Aim:sameTeam(plr)
+		local lt, tt = LOCAL.Team, plr.Team
+		if not lt or not tt then
+			return false
+		end
+		if lt.Neutral or tt.Neutral then
+			return false
+		end
+		return lt == tt
+	end
+
+	function Aim:isVisible(cam, from, to, char)
+		if not self.visibleCheck then
+			return true
+		end
+		local dir = to - from
+		local dist = dir.Magnitude
+		if dist < 0.05 then
+			return true
+		end
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		local ignore = { LOCAL.Character, cam }
+		if char then
+			table.insert(ignore, char)
+		end
+		params.FilterDescendantsInstances = ignore
+		local hit = workspace:Raycast(from, dir.Unit * dist, params)
+		if not hit then
+			return true
+		end
+		if char and hit.Instance and hit.Instance:IsDescendantOf(char) then
+			return true
+		end
+		return false
+	end
+
+	function Aim:predictPos(part, root)
+		if not self.prediction or not part then
+			return part and part.Position or nil
+		end
+		local vel = Vector3.zero
+		if root and root:IsA("BasePart") then
+			vel = root.AssemblyLinearVelocity
+		elseif part:IsA("BasePart") then
+			vel = part.AssemblyLinearVelocity
+		end
+		return part.Position + vel * self.predictionTime
+	end
+
+	function Aim:screenDistPx(cam, worldPos)
+		local sp, on = cam:WorldToViewportPoint(worldPos)
+		if not on or sp.Z <= 0 then
+			return math.huge
+		end
+		local cx, cy = cam.ViewportSize.X * 0.5, cam.ViewportSize.Y * 0.5
+		local dx, dy = sp.X - cx, sp.Y - cy
+		return math.sqrt(dx * dx + dy * dy)
 	end
 
 	function Aim:angleDeg(a, b)
 		return math.deg(math.acos(math.clamp(a:Dot(b), -1, 1)))
 	end
 
-	function Aim:pickTarget(cam, fovDeg, stickyPt)
-		if stickyPt then
-			local camPos = cam.CFrame.Position
-			local look = cam.CFrame.LookVector
-			local dir = (stickyPt - camPos).Unit
-			if self:angleDeg(look, dir) <= fovDeg * 1.35 then
-				return stickyPt
+	function Aim:pickTarget(cam, fovPx, boneList, stickyChar)
+		if stickyChar and stickyChar.Parent then
+			local hum = stickyChar:FindFirstChildOfClass("Humanoid")
+			local root = stickyChar:FindFirstChild("HumanoidRootPart")
+			if hum and root and hum.Health > 0 then
+				local plr = Players:GetPlayerFromCharacter(stickyChar)
+				if plr and self:passesFilters(plr, hum, stickyChar) then
+					local pt, part = self:bestPointOnChar(stickyChar, boneList, cam)
+					if pt and self:screenDistPx(cam, pt) <= fovPx * 1.25 then
+						return pt, stickyChar, part
+					end
+				end
 			end
 		end
 
 		local camPos = cam.CFrame.Position
-		local look = cam.CFrame.LookVector
-		local best
-		local bestAng = fovDeg
+		local bestPt
+		local bestChar
+		local bestPart
+		local bestPx = fovPx
 		local maxD2 = self.maxDist * self.maxDist
 
 		for _, plr in ipairs(Players:GetPlayers()) do
@@ -106,48 +228,85 @@ return function(deps)
 				local char = plr.Character
 				local hum = char and char:FindFirstChildOfClass("Humanoid")
 				local root = char and char:FindFirstChild("HumanoidRootPart")
-				if hum and root and hum.Health > 0 then
+				if hum and root and hum.Health > 0 and self:passesFilters(plr, hum, char) then
 					local delta = root.Position - camPos
 					if delta.X * delta.X + delta.Y * delta.Y + delta.Z * delta.Z <= maxD2 then
-						local pt = self:aimPoint(char)
-						if pt then
-							local dir = (pt - camPos).Unit
-							local ang = self:angleDeg(look, dir)
-							if ang < bestAng then
-								bestAng = ang
-								best = pt
+						local pt, part = self:bestPointOnChar(char, boneList, cam)
+						if pt and self:isVisible(cam, camPos, pt, char) then
+							local px = self:screenDistPx(cam, pt)
+							if px < bestPx then
+								bestPx = px
+								bestPt = pt
+								bestChar = char
+								bestPart = part
 							end
 						end
 					end
 				end
 			end
 		end
-		return best
+		return bestPt, bestChar, bestPart
 	end
 
-	function Aim:rotateToward(cam, worldPos, strength, capDeg)
+	function Aim:passesFilters(plr, hum, char)
+		if self.ignoreTeam and self:sameTeam(plr) then
+			return false
+		end
+		if self.ignoreKnocked and self:isKnocked(plr, hum, char) then
+			return false
+		end
+		return true
+	end
+
+	function Aim:bestPointOnChar(char, boneList, cam)
+		local root = char:FindFirstChild("HumanoidRootPart")
+		local bestPt
+		local bestPart
+		local bestPx = math.huge
+		for _, alias in ipairs(boneList) do
+			local part = self:getBonePart(char, alias)
+			if part then
+				local pt = self:predictPos(part, root)
+				if pt then
+					pt = pt + Vector3.new(0, 0.05, 0)
+					local px = self:screenDistPx(cam, pt)
+					if px < bestPx then
+						bestPx = px
+						bestPt = pt
+						bestPart = part
+					end
+				end
+			end
+		end
+		return bestPt, bestPart
+	end
+
+	function Aim:smoothingStrength()
+		return math.clamp(self.smoothing / 100, 0.03, 1)
+	end
+
+	function Aim:rotateToward(cam, worldPos, capDeg)
 		local camPos = cam.CFrame.Position
 		local look = cam.CFrame.LookVector
 		local want = (worldPos - camPos).Unit
 		local ang = self:angleDeg(look, want)
-		if ang < 0.04 then
+		if ang < 0.03 then
 			return true
 		end
-		local step = math.min(capDeg, ang) * math.clamp(strength, 0.02, 1)
+		local px = self:screenDistPx(cam, worldPos)
+		if px <= self.deadzonePx then
+			return true
+		end
+		local strength = self:smoothingStrength()
+		local step = math.min(capDeg, ang) * strength
 		local t = step / math.max(ang, 0.001)
 		local newLook = look:Lerp(want, t).Unit
 		cam.CFrame = CFrame.lookAt(camPos, camPos + newLook)
-		return ang < 0.25
+		return ang < 0.2
 	end
 
-	function Aim:fovRadiusPx(cam, fovDeg)
-		local camFov = math.rad(cam.FieldOfView)
-		local half = math.rad(math.clamp(fovDeg, 0.5, 45) * 0.5)
-		local vy = cam.ViewportSize.Y * 0.5
-		if camFov < 0.01 then
-			return 40
-		end
-		return (math.tan(half) / math.tan(camFov * 0.5)) * vy
+	function Aim:fovRadiusPx(cam, px)
+		return math.clamp(px, 8, 600)
 	end
 
 	function Aim:destroyCrosshair()
@@ -157,6 +316,7 @@ return function(deps)
 		end
 		table.clear(crossParts)
 		table.clear(fovRing)
+		fovFill = nil
 		statusLabel = nil
 	end
 
@@ -172,6 +332,19 @@ return function(deps)
 		crossGui.DisplayOrder = 210
 		crossGui:SetAttribute("FustBundle", true)
 		crossGui.Parent = LOCAL:WaitForChild("PlayerGui")
+
+		fovFill = Instance.new("Frame")
+		fovFill.Name = "FovFill"
+		fovFill.BorderSizePixel = 0
+		fovFill.BackgroundColor3 = self.fovRingColor
+		fovFill.BackgroundTransparency = self.fovFillTransparency
+		fovFill.AnchorPoint = Vector2.new(0.5, 0.5)
+		fovFill.Position = UDim2.fromScale(0.5, 0.5)
+		fovFill.Visible = false
+		fovFill.Parent = crossGui
+		local fillCorner = Instance.new("UICorner")
+		fillCorner.CornerRadius = UDim.new(1, 0)
+		fillCorner.Parent = fovFill
 
 		local function bar(name, size, pos)
 			local f = Instance.new("Frame")
@@ -208,7 +381,7 @@ return function(deps)
 			seg.Name = "F" .. i
 			seg.BorderSizePixel = 0
 			seg.BackgroundColor3 = self.fovRingColor
-			seg.BackgroundTransparency = 0.35
+			seg.BackgroundTransparency = 0.2
 			seg.AnchorPoint = Vector2.new(0.5, 0.5)
 			seg.Size = UDim2.fromOffset(2, 2)
 			seg.Visible = false
@@ -221,11 +394,11 @@ return function(deps)
 		statusLabel.BackgroundTransparency = 1
 		statusLabel.Font = Enum.Font.GothamMedium
 		statusLabel.TextSize = 13
-		statusLabel.TextColor3 = Color3.fromRGB(200, 255, 200)
+		statusLabel.TextColor3 = Color3.fromRGB(255, 120, 120)
 		statusLabel.TextXAlignment = Enum.TextXAlignment.Center
 		statusLabel.AnchorPoint = Vector2.new(0.5, 0)
-		statusLabel.Position = UDim2.new(0.5, 0, 0, 8)
-		statusLabel.Size = UDim2.new(1, -24, 0, 40)
+		statusLabel.Position = UDim2.new(0.5, 0, 0, 6)
+		statusLabel.Size = UDim2.new(1, -20, 0, 36)
 		statusLabel.TextWrapped = true
 		statusLabel.Visible = false
 		statusLabel.Parent = crossGui
@@ -233,62 +406,59 @@ return function(deps)
 
 	function Aim:updateVisuals(cam)
 		if not crossGui or not crossGui.Parent then
-			if self.showCrosshair or self.showFov then
+			if self.drawFov or self.filledFov or self.showCrosshair or self.visualCheck then
 				self:ensureCrosshair()
 			else
 				return
 			end
 		end
 
-		local showCross = self.showCrosshair
 		for _, p in ipairs(crossParts) do
-			if p.Name ~= "VisualCheck" then
-				p.Visible = showCross
-				p.BackgroundColor3 = self.crossColor
-			end
+			p.Visible = self.showCrosshair
+			p.BackgroundColor3 = self.crossColor
 		end
 
-		local showRing = self.showFov
-		local radius = self:fovRadiusPx(cam, self.fovVisualDeg)
+		local radius = self:fovRadiusPx(cam, self.weaponFovPx)
 		local cx, cy = cam.ViewportSize.X * 0.5, cam.ViewportSize.Y * 0.5
+		local showRing = self.drawFov
 		for i = 1, FOV_SEGMENTS do
 			local seg = fovRing[i]
 			if seg then
 				if showRing then
 					local t = (i / FOV_SEGMENTS) * math.pi * 2
-					local x = cx + math.cos(t) * radius
-					local y = cy + math.sin(t) * radius
 					seg.Visible = true
 					seg.BackgroundColor3 = self.fovRingColor
-					seg.Position = UDim2.fromOffset(x, y)
+					seg.Position = UDim2.fromOffset(cx + math.cos(t) * radius, cy + math.sin(t) * radius)
 				else
 					seg.Visible = false
 				end
 			end
 		end
 
+		if fovFill then
+			if self.filledFov and self.drawFov then
+				fovFill.Visible = true
+				fovFill.BackgroundColor3 = self.fovRingColor
+				fovFill.BackgroundTransparency = self.fovFillTransparency
+				fovFill.Size = UDim2.fromOffset(radius * 2, radius * 2)
+			else
+				fovFill.Visible = false
+			end
+		end
+
 		if statusLabel then
 			if self.visualCheck then
-				local ads = self:isAds()
-				local can = self:canAim()
-				local pt = self:pickTarget(cam, self.lockFov, self.lockedPt)
-				local lockLine = self.lockEnabled and (self.lockHeld and "LOCK ON" or "lock: hold key") or "lock: off"
+				local pt, ch = self:pickTarget(cam, self.weaponFovPx, self.targetBones, self.stickyChar)
 				statusLabel.Visible = true
 				statusLabel.Text = string.format(
-					"AIMBOT v2 · ADS:%s · %s · target:%s · cross:%s fov:%s",
-					ads and "yes" or "no",
-					lockLine,
-					pt and "yes" or "no",
-					self.showCrosshair and "on" or "off",
-					self.showFov and "on" or "off"
+					"Aim:%s key:%s vis:%s | tgt:%s silent:%s trig:%s",
+					self.aimbotEnabled and "on" or "off",
+					self:aimKeysHeld() and "hold" or "—",
+					self.visibleCheck and "on" or "off",
+					pt and (ch and ch.Name or "?") or "none",
+					self.silentOn and "on" or "off",
+					self.triggerEnabled and "on" or "off"
 				)
-				if self.lockHeld and pt then
-					statusLabel.TextColor3 = Color3.fromRGB(120, 255, 160)
-				elseif not can and self.requireAds then
-					statusLabel.TextColor3 = Color3.fromRGB(255, 200, 120)
-				else
-					statusLabel.TextColor3 = Color3.fromRGB(200, 220, 255)
-				end
 			else
 				statusLabel.Visible = false
 			end
@@ -299,13 +469,49 @@ return function(deps)
 		if not self.silentOn or not self:canAim() then
 			return
 		end
-		local pt = self:pickTarget(cam, self.silentFov, self.lockedPt)
+		local pt, ch = self:pickTarget(cam, self.silentFovPx, self.targetBones, self.stickyChar)
 		if pt then
-			self.lockedPt = pt
+			self.stickyChar = ch
 			for _ = 1, 2 do
-				self:rotateToward(cam, pt, self.silentStrength, self.silentMaxDeg)
+				self:rotateToward(cam, pt, self.silentMaxDeg * self.silentStrength)
 			end
 		end
+	end
+
+	function Aim:tryTriggerbot(cam, dt)
+		if not self.triggerEnabled or not self.triggerKeyHeld or not self:canAim() then
+			self.triggerAcc = 0
+			return
+		end
+		local pt, ch = self:pickTarget(cam, math.max(8, self.deadzonePx + 2), self.triggerBones, nil)
+		if not pt then
+			self.triggerAcc = 0
+			return
+		end
+		local px = self:screenDistPx(cam, pt)
+		if px > self.deadzonePx + 1.5 then
+			self.triggerAcc = 0
+			return
+		end
+		self.triggerAcc += dt * 1000
+		if self.triggerAcc < self.triggerDelayMs then
+			return
+		end
+		local now = os.clock()
+		if now - self.lastTrigger < TRIGGER_COOLDOWN then
+			return
+		end
+		self.lastTrigger = now
+		self.triggerAcc = 0
+		pcall(function()
+			local vim = game:GetService("VirtualInputManager")
+			local cx = cam.ViewportSize.X * 0.5
+			local cy = cam.ViewportSize.Y * 0.5
+			vim:SendMouseButtonEvent(cx, cy, 0, true, game, 0)
+			task.defer(function()
+				vim:SendMouseButtonEvent(cx, cy, 0, false, game, 0)
+			end)
+		end)
 	end
 
 	function Aim:syncBind()
@@ -321,11 +527,11 @@ return function(deps)
 			return
 		end
 		self.bound = true
-		if self.showCrosshair or self.showFov then
+		if self.drawFov or self.filledFov or self.showCrosshair or self.visualCheck then
 			self:ensureCrosshair()
 		end
 
-		RunService:BindToRenderStep(AIM_RENDER, Enum.RenderPriority.Camera.Value + 1, function()
+		RunService:BindToRenderStep(AIM_RENDER, Enum.RenderPriority.Camera.Value + 1, function(dt)
 			local cam = workspace.CurrentCamera
 			if not cam then
 				return
@@ -333,28 +539,24 @@ return function(deps)
 
 			self:updateVisuals(cam)
 
-			if not self:canAim() and self.requireAds then
-				return
+			if self:shouldRunAimbot() then
+				local pt, ch = self:pickTarget(cam, self.weaponFovPx, self.targetBones, self.stickyChar)
+				if pt then
+					self.stickyChar = ch
+					local cap = 0.35 + (100 - math.clamp(self.smoothing, 1, 100)) * 0.025
+					self:rotateToward(cam, pt, cap)
+				else
+					self.stickyChar = nil
+				end
+			elseif not self:aimKeysHeld() then
+				self.stickyChar = nil
 			end
 
-			local pt
-
-			if self.lockEnabled and self.lockHeld then
-				pt = self:pickTarget(cam, self.lockFov, self.lockedPt)
-				if pt then
-					self.lockedPt = pt
-					self:rotateToward(cam, pt, self.lockStrength, self.lockMaxDeg)
-				else
-					self.lockedPt = nil
-				end
-			elseif self.assistOn then
-				pt = self:pickTarget(cam, self.fov, nil)
-				if pt then
-					self:rotateToward(cam, pt, self.strength, self.maxDegPerFrame)
-				end
-			elseif self.firingSilent then
+			if self.firingSilent then
 				self:runSilentBurst(cam)
 			end
+
+			self:tryTriggerbot(cam, dt)
 		end)
 
 		self.inputBeganConn = UserInputService.InputBegan:Connect(function(input, processed)
@@ -364,18 +566,12 @@ return function(deps)
 			if input.UserInputType ~= Enum.UserInputType.MouseButton1 then
 				return
 			end
-			if not self:canAim() and self.requireAds then
+			if not self:canAim() then
 				return
 			end
 			local cam = workspace.CurrentCamera
 			if not cam then
 				return
-			end
-			if self.snapOn then
-				local pt = self:pickTarget(cam, self.snapFov, self.lockedPt)
-				if pt then
-					self:rotateToward(cam, pt, 0.85, self.snapMaxDeg)
-				end
 			end
 			if self.silentOn then
 				self.firingSilent = true
@@ -403,16 +599,18 @@ return function(deps)
 			self.inputEndedConn = nil
 		end
 		self.bound = false
-		self.lockedPt = nil
+		self.stickyChar = nil
 		self.firingSilent = false
+		self.triggerAcc = 0
 	end
 
 	function Aim:destroy()
-		self.assistOn = false
-		self.snapOn = false
+		self.aimbotEnabled = false
 		self.silentOn = false
-		self.lockEnabled = false
-		self.lockHeld = false
+		self.triggerEnabled = false
+		self.aimKey1Held = false
+		self.aimKey2Held = false
+		self.triggerKeyHeld = false
 		self:unbind()
 		self:destroyCrosshair()
 	end
