@@ -4,7 +4,7 @@ return function(deps)
 	local Esp = deps.Esp
 	local Aim = deps.Aim
 	local World = deps.World
-	local bundleVersion = deps.BundleVersion or "2.4.0"
+	local bundleVersion = deps.BundleVersion or "2.4.1"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false
@@ -525,7 +525,7 @@ return function(deps)
 	local lightSec = worldTab:Section({ Name = "Lighting", Icon = "sun", Side = "Left" })
 	lightSec:Toggle({
 		Name = "Fullbright",
-		Description = "Bright ambient, no shadows (client Lighting)",
+		Description = "Camera colour lift — does not touch Lighting (FustSky checks that)",
 		Default = false,
 		Flag = "Fust_Fullbright",
 		Callback = function(v)
@@ -534,12 +534,12 @@ return function(deps)
 		end,
 	})
 	lightSec:Slider({
-		Name = "Fullbright brightness",
-		Min = 1,
-		Max = 5,
-		Default = 2,
-		Increment = 0.1,
-		Flag = "Fust_FbBright",
+		Name = "Fullbright strength",
+		Min = 0.05,
+		Max = 0.6,
+		Default = 0.25,
+		Increment = 0.01,
+		Flag = "Fust_FbStrength",
 		Callback = function(v)
 			World.brightness = v
 			if World.fullbrightOn then
@@ -548,10 +548,12 @@ return function(deps)
 		end,
 	})
 	local timeSec = worldTab:Section({ Name = "Time", Icon = "clock", Side = "Right" })
+	timeSec:Label("Making night into day gets reported by FustSky after ~3s. Darker times are not flagged.")
 	timeSec:Toggle({
 		Name = "Time changer",
-		Description = "Locks ClockTime (Heartbeat keeps it)",
+		Description = "Locks ClockTime — brighter than real time is reported",
 		Default = false,
+		Risky = true,
 		Flag = "Fust_TimeOn",
 		Callback = function(v)
 			World.timeControlOn = v

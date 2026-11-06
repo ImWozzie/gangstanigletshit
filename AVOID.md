@@ -13,6 +13,17 @@ Use this as a checklist when writing or running executor scripts against **Fust 
 | `FustPad` + `FustLock` | Legit **ADS camera** pipeline (`aimStep`, `FustAimGun` / `FustAimBow`, `targetUnderCrosshair`, raycast visibility). |
 | `FustFpsProbe` | Measures frame time when certain UIs open; can fire `Remotes.FpsProbe` with FPS/stall stats. |
 | Character `LocalScript` (workspace rig) | Bytecode AC hook; console may show errors when injecting — treat as high risk. |
+| `FustSky` (PlayerScripts) | Owns Lighting/Atmosphere every frame **and** runs a lighting tamper check when `ReplicatedStorage.Fust:GetAttribute("ACM")` is true (see below). |
+
+### FustSky lighting check (fullbright / time changer)
+
+Every 0.25 s it compares what it set (`want`) against live values. If any stays **brighter** than wanted for 3 s it fires `Remotes.MotionSync:FireServer({ lt = "<prop> <value>" })` (throttled to once per 300 s).
+
+- Watched: `Lighting.ExposureCompensation` (tol 0.05), `Ambient` / `OutdoorAmbient` (luminance tol 0.03), anything else it wrote (e.g. `Brightness`, tol 0), `Atmosphere.Density` (0.02) / `Haze` (0.05), removal of effects it manages, and `ClockTime` if daylight rises by > 0.25 versus the real time.
+- Darker than wanted is never flagged.
+- Writing these on Heartbeat also strobes, because FustSky rewrites them every frame.
+
+**Rule:** fullbright must not write Lighting/Atmosphere or delete their effects. `fust_world.luau` uses its own `ColorCorrectionEffect` under `CurrentCamera` instead (FustSky does not inspect camera children). Time changer is marked Risky — brightening the clock is reported.
 
 Staff tooling (e.g. `FustAdminESP2`) uses **`Highlight` + `workspace.FustESPOutlines`** — do not mimic that unless you are staff.
 

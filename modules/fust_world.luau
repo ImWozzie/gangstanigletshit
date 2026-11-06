@@ -1,112 +1,82 @@
--- Client lighting / time (local Lighting tweaks). factory(deps) -> World
+-- Client visuals / time. factory(deps) -> World
+-- FustSky reports (Remotes.MotionSync) when Lighting / Atmosphere / ClockTime end up
+-- brighter than it set them, so fullbright must not touch Lighting at all.
 return function(deps)
 	local Lighting = game:GetService("Lighting")
 	local RunService = deps.RunService
 
 	local World = {
 		fullbrightOn = false,
+		brightness = 0.25,
 		timeControlOn = false,
 		clockTime = 14,
-		brightness = 2,
-		saved = nil,
-		loopConn = nil,
+		grade = nil,
+		camConn = nil,
+		timeConn = nil,
 	}
 
-	local function capture()
-		if World.saved then
-			return
+	local function placeGrade()
+		local grade = World.grade
+		local cam = workspace.CurrentCamera
+		if grade and cam and grade.Parent ~= cam then
+			grade.Parent = cam
 		end
-		World.saved = {
-			Ambient = Lighting.Ambient,
-			OutdoorAmbient = Lighting.OutdoorAmbient,
-			Brightness = Lighting.Brightness,
-			GlobalShadows = Lighting.GlobalShadows,
-			ClockTime = Lighting.ClockTime,
-			GeographicLatitude = Lighting.GeographicLatitude,
-		}
-	end
-
-	function World:restore()
-		local s = self.saved
-		if not s then
-			return
-		end
-		Lighting.Ambient = s.Ambient
-		Lighting.OutdoorAmbient = s.OutdoorAmbient
-		Lighting.Brightness = s.Brightness
-		Lighting.GlobalShadows = s.GlobalShadows
-		Lighting.ClockTime = s.ClockTime
-		Lighting.GeographicLatitude = s.GeographicLatitude
-		self.saved = nil
 	end
 
 	function World:applyFullbright()
 		if not self.fullbrightOn then
-			if not self.timeControlOn then
-				self:restore()
-			else
-				Lighting.GlobalShadows = true
-				Lighting.Brightness = 1
+			if self.grade then
+				self.grade:Destroy()
+				self.grade = nil
+			end
+			if self.camConn then
+				self.camConn:Disconnect()
+				self.camConn = nil
 			end
 			return
 		end
-		capture()
-		Lighting.Ambient = Color3.fromRGB(255, 255, 255)
-		Lighting.OutdoorAmbient = Color3.fromRGB(255, 255, 255)
-		Lighting.Brightness = self.brightness
-		Lighting.GlobalShadows = false
+		if not self.grade then
+			local grade = Instance.new("ColorCorrectionEffect")
+			grade.Name = "ColorCorrection"
+			self.grade = grade
+		end
+		self.grade.Brightness = self.brightness
+		self.grade.Contrast = -self.brightness * 0.35
+		self.grade.Saturation = 0
+		self.grade.Enabled = true
+		placeGrade()
+		if not self.camConn then
+			self.camConn = workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(placeGrade)
+		end
 	end
 
 	function World:applyTime()
 		if not self.timeControlOn then
-			if not self.fullbrightOn then
-				self:restore()
+			if self.timeConn then
+				self.timeConn:Disconnect()
+				self.timeConn = nil
 			end
 			return
 		end
-		capture()
 		Lighting.ClockTime = self.clockTime
+		if not self.timeConn then
+			self.timeConn = RunService.Heartbeat:Connect(function()
+				if Lighting.ClockTime ~= self.clockTime then
+					Lighting.ClockTime = self.clockTime
+				end
+			end)
+		end
 	end
 
 	function World:sync()
 		self:applyFullbright()
 		self:applyTime()
-		if self.fullbrightOn or self.timeControlOn then
-			self:ensureLoop()
-		else
-			self:stopLoop()
-		end
-	end
-
-	function World:ensureLoop()
-		if self.loopConn then
-			return
-		end
-		self.loopConn = RunService.Heartbeat:Connect(function()
-			if self.fullbrightOn then
-				Lighting.Ambient = Color3.fromRGB(255, 255, 255)
-				Lighting.OutdoorAmbient = Color3.fromRGB(255, 255, 255)
-				Lighting.Brightness = self.brightness
-				Lighting.GlobalShadows = false
-			end
-			if self.timeControlOn then
-				Lighting.ClockTime = self.clockTime
-			end
-		end)
-	end
-
-	function World:stopLoop()
-		if self.loopConn then
-			self.loopConn:Disconnect()
-			self.loopConn = nil
-		end
 	end
 
 	function World:destroy()
 		self.fullbrightOn = false
 		self.timeControlOn = false
-		self:stopLoop()
-		self:restore()
+		self:sync()
 	end
 
 	return World
