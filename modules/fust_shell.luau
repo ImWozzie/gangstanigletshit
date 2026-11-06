@@ -5,7 +5,7 @@ return function(deps)
 	local Aim = deps.Aim
 	local World = deps.World
 	local Misc = deps.Misc
-	local bundleVersion = deps.BundleVersion or "2.6.4"
+	local bundleVersion = deps.BundleVersion or "2.6.5"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false
@@ -17,7 +17,7 @@ return function(deps)
 
 	local Window = Prism:CreateWindow({
 		Title = "Fust Hub",
-		Subtitle = "esp + combat v2",
+		Subtitle = "protected · esp + soft assist",
 		Footer = bundleVersion,
 		Intro = false,
 		ToggleKey = Enum.KeyCode.RightControl,
@@ -508,23 +508,37 @@ return function(deps)
 		end,
 	})
 	keySec:Toggle({
-		Name = "Battlemode toggle",
-		Description = "Ignores ADS requirement — click the key chip to rebind",
+		Name = "Battlemode (disabled)",
+		Description = "No-op — aiming without ADS looked Multihack-shaped",
 		Default = false,
+		Risky = true,
 		Flag = "Fust_Battle",
 		Mode = "Toggle",
 		Keybind = Enum.KeyCode.P,
-		Callback = function(v)
-			Aim.battleMode = v
+		Callback = function()
+			Aim.battleMode = false
 		end,
 	})
 
+	-- Hard protections after Multihack (LookPitch / mouse / VIM).
 	Aim.requireHoldKey = true
 	Aim.requireAds = true
 	Aim.useMouseDrive = true
 	Aim.lockAssist = false
 	Aim.silentOn = false
 	Aim.triggerEnabled = false
+	Aim.battleMode = false
+	Aim.maxMousePx = 2
+	Aim.assistHz = 18
+	if Misc then
+		Misc.autoWeak = false
+		Misc:syncBind()
+	end
+	if World then
+		World.fullbrightOn = false
+		World.timeControlOn = false
+		World:sync()
+	end
 
 	local miscTab = Window:Tab({ Name = "Misc", Icon = "wrench", Description = "Farming helpers" })
 	local farmSec = miscTab:Section({ Name = "Gather", Icon = "axe", Side = "Left" })
@@ -642,7 +656,7 @@ return function(deps)
 	end
 
 	local safeSec = aimTab:Section({ Name = "Safety", Icon = "shield", Side = "Right" })
-	safeSec:Label("Panic kills aimbot, silent, trigger and time changer. ESP stays on. Lighting fullbright is permanently disabled.")
+	safeSec:Label("Panic clears aimbot, soft lock, silent, trigger, battle, gather, time. ESP stays. Fullbright/silent/trigger/gather stay dead.")
 	safeSec:Button({
 		Name = "Panic now",
 		Description = "Disable everything risky",
@@ -668,7 +682,7 @@ return function(deps)
 	})
 
 	local sysSec = espTab:Section({ Name = "Script", Icon = "power", Side = "Right" })
-	sysSec:Label("Version: " .. bundleVersion .. " — use Refresh if Aimbot tab looks old")
+	sysSec:Label("Version: " .. bundleVersion .. " · protected — silent/trigger/gather/fullbright off · soft lock opt-in only")
 	sysSec:Button({
 		Name = "Refresh from GitHub",
 		Description = "Re-download all modules",
