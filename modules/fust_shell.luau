@@ -57,11 +57,81 @@ return function(deps)
 		end,
 	})
 
-	local featSec = espTab:Section({ Name = "Features", Icon = "users", Side = "Left" })
+	local visSec = espTab:Section({ Name = "Visuals", Icon = "users", Side = "Left" })
 
-	featSec:Slider({
+	visSec:Toggle({ Name = "Box", Default = true, Flag = "Fust_EspBox", Callback = function(v)
+		Esp.box = v
+	end })
+	visSec:Dropdown({
+		Name = "Box style",
+		Options = { "Full", "Corners" },
+		Default = "Full",
+		Flag = "Fust_EspBoxStyle",
+		DependsOn = "Fust_EspBox",
+		Callback = function(v)
+			Esp.boxStyle = v
+		end,
+	})
+	visSec:Toggle({ Name = "Skeleton", Default = true, Flag = "Fust_EspSkel", Callback = function(v)
+		Esp.skeleton = v
+	end })
+	visSec:Toggle({
+		Name = "Rounded joints",
+		Description = "Smooth dots where bones meet (close range)",
+		Default = true,
+		Flag = "Fust_EspJoints",
+		DependsOn = "Fust_EspSkel",
+		Callback = function(v)
+			Esp.joints = v
+		end,
+	})
+	visSec:Toggle({
+		Name = "Outline",
+		Description = "Dark edge behind lines so they read on any background",
+		Default = true,
+		Flag = "Fust_EspOutline",
+		Callback = function(v)
+			Esp.outline = v
+		end,
+	})
+	visSec:Toggle({ Name = "Name", Default = true, Flag = "Fust_EspName", Callback = function(v)
+		Esp.name = v
+	end })
+	visSec:Toggle({ Name = "Distance", Default = true, Flag = "Fust_EspDist", Callback = function(v)
+		Esp.distance = v
+	end })
+	visSec:Toggle({ Name = "Health bar", Description = "Colour shifts green to red", Default = true, Flag = "Fust_EspHpBar", Callback = function(v)
+		Esp.healthBar = v
+	end })
+	visSec:Toggle({ Name = "Health text", Default = false, Flag = "Fust_EspHpTxt", Callback = function(v)
+		Esp.healthText = v
+	end })
+	visSec:ColorPicker({
+		Name = "ESP colour",
+		Default = Color3.fromRGB(235, 235, 235),
+		Flag = "Fust_EspCol",
+		Callback = function(c)
+			Esp.color = c
+		end,
+	})
+	visSec:Slider({
+		Name = "Line thickness",
+		Min = 1,
+		Max = 4,
+		Default = 1.5,
+		Increment = 0.5,
+		Suffix = " px",
+		Flag = "Fust_EspThick",
+		Callback = function(v)
+			Esp.thickness = v
+		end,
+	})
+
+	local rangeSec = espTab:Section({ Name = "Range & performance", Icon = "gauge", Side = "Right" })
+
+	rangeSec:Slider({
 		Name = "Max distance",
-		Description = "How far away (studs) players can be",
+		Description = "How far away players are shown",
 		Min = 100,
 		Max = 5000,
 		Default = 2500,
@@ -72,26 +142,22 @@ return function(deps)
 			Esp.maxDist = v
 		end,
 	})
-
-	featSec:Toggle({ Name = "Box ESP", Default = true, Flag = "Fust_EspBox", Callback = function(v)
-		Esp.box = v
-	end })
-	featSec:Toggle({ Name = "Skeleton ESP", Default = true, Flag = "Fust_EspSkel", Callback = function(v)
-		Esp.skeleton = v
-	end })
-	featSec:Toggle({ Name = "Name", Default = true, Flag = "Fust_EspName", Callback = function(v)
-		Esp.name = v
-	end })
-	featSec:Toggle({ Name = "Distance", Default = true, Flag = "Fust_EspDist", Callback = function(v)
-		Esp.distance = v
-	end })
-	featSec:Toggle({ Name = "Health bar", Description = "Only within HP range below", Default = true, Flag = "Fust_EspHpBar", Callback = function(v)
-		Esp.healthBar = v
-	end })
-
-	featSec:Slider({
+	rangeSec:Slider({
+		Name = "Skeleton range",
+		Description = "Beyond this: box + name only",
+		Min = 50,
+		Max = 1000,
+		Default = 400,
+		Increment = 25,
+		Suffix = " st",
+		Flag = "Fust_EspSkelRange",
+		Callback = function(v)
+			Esp.skelDist = v
+		end,
+	})
+	rangeSec:Slider({
 		Name = "Health bar range",
-		Description = "Max studs to draw HP bar (not full ESP range)",
+		Description = "Max studs to draw the HP bar",
 		Min = 25,
 		Max = 400,
 		Default = 50,
@@ -102,17 +168,29 @@ return function(deps)
 			Esp.healthBarMaxDist = v
 		end,
 	})
-
-	featSec:Toggle({ Name = "Health text", Default = false, Flag = "Fust_EspHpTxt", Callback = function(v)
-		Esp.healthText = v
-	end })
-
-	featSec:ColorPicker({
-		Name = "ESP colour",
-		Default = Color3.fromRGB(235, 235, 235),
-		Flag = "Fust_EspCol",
-		Callback = function(c)
-			Esp.color = c
+	rangeSec:Slider({
+		Name = "Max players",
+		Description = "Closest players drawn",
+		Min = 1,
+		Max = Esp.MAX_SLOTS or 20,
+		Default = 12,
+		Increment = 1,
+		Flag = "Fust_EspMaxTargets",
+		Callback = function(v)
+			Esp.maxTargets = v
+		end,
+	})
+	rangeSec:Slider({
+		Name = "Update rate",
+		Description = "Higher is smoother, lower is lighter",
+		Min = 5,
+		Max = 60,
+		Default = 30,
+		Increment = 5,
+		Suffix = " Hz",
+		Flag = "Fust_EspRate",
+		Callback = function(v)
+			Esp.rate = v
 		end,
 	})
 
