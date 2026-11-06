@@ -1,13 +1,17 @@
--- Fust aim module (camera-only, no GunControl hooks). factory(deps) -> Aim
+-- Fust aim module (camera-only, no GunControl / Raycast hooks). factory(deps) -> Aim
+-- "Silent" = multi-frame camera snap on LMB inside FOV. LOS uses workspace:Raycast for
+-- visibility only — never redirects bullets or wraps GunControl.
 return function(deps)
 	local Players = deps.Players
 	local RunService = deps.RunService
 	local UserInputService = deps.UserInputService
 	local LOCAL = deps.LocalPlayer
+	local workspace = workspace
 
 	local AIM_RENDER = "FustSafeAimAssist"
 	local TRIGGER_COOLDOWN = 0.05
-	local VISUAL_HUD_TICK = 0.2
+	local VISUAL_HUD_TICK = 0.25
+	local SILENT_HOLD = 0.08 -- keep snapping briefly after M1 so the shot lands on-cam
 
 	local BONE_ALIASES = {
 		Head = "Head",
@@ -33,8 +37,9 @@ return function(deps)
 		filledFov = false,
 		silentOn = false,
 		silentFovPx = 90,
-		silentStrength = 0.92,
-		silentMaxDeg = 3.5,
+		silentStrength = 1,
+		silentMaxDeg = 8,
+		silentSteps = 3,
 		triggerEnabled = false,
 		triggerBones = { "Head" },
 		triggerDelayMs = 10,
@@ -63,6 +68,7 @@ return function(deps)
 		bound = false,
 		stickyChar = nil,
 		firingSilent = false,
+		silentUntil = 0,
 		lastTrigger = 0,
 		triggerAcc = 0,
 		visualHudAcc = 0,
@@ -74,6 +80,11 @@ return function(deps)
 		inputBeganConn = nil,
 		inputEndedConn = nil,
 	}
+
+	-- Reused raycast state (avoid alloc every LOS check).
+	local rayParams = RaycastParams.new()
+	rayParams.FilterType = Enum.RaycastFilterType.Exclude
+	local rayIgnore = {}
 
 	local crossGui
 	local crossParts = {}
@@ -110,10 +121,7 @@ return function(deps)
 	end
 
 	function Aim:canAim()
-		if self.battleMode then
-			return true
-		end
-		if not self.requireAds then
+		if self.battleMode or not self.requireAds then
 			return true
 		end
 		return self:isAds()
@@ -178,15 +186,23 @@ return function(deps)
 
 	function Aim:sameTeam(plr)
 		local lt, tt = LOCAL.Team, plr.Team
-		if not lt or not tt then
-			return false
-		end
-		if lt.Neutral or tt.Neutral then
+		if not lt or not tt or lt.Neutral or tt.Neutral then
 			return false
 		end
 		return lt == tt
 	end
 
+	function Aim:passesFilters(plr, hum, char)
+		if self.ignoreTeam and self:sameTeam(plr) then
+			return false
+		end
+		if self.ignoreKnocked and self:isKnocked(plr, hum, char) then
+			return false
+		end
+		return true
+	end
+
+	-- LOS raycast only (never used to spoof gun hits).
 	function Aim:isVisible(cam, from, to, char)
 		if not self.visibleCheck then
 			return true
@@ -196,19 +212,17 @@ return function(deps)
 		if dist < 0.05 then
 			return true
 		end
-		local params = RaycastParams.new()
-		params.FilterType = Enum.RaycastFilterType.Exclude
-		local ignore = {}
-		if LOCAL.Character then
-			table.insert(ignore, LOCAL.Character)
+		table.clear(rayIgnore)
+		local myChar = LOCAL.Character
+		if myChar then
+			rayIgnore[1] = myChar
 		end
-		params.FilterDescendantsInstances = ignore
+		rayParams.FilterDescendantsInstances = rayIgnore
 		local unit = dir.Unit
 		local origin = from
 		local remaining = dist
-		-- Foliage, glass and invisible parts block rays at range; step past them.
 		for _ = 1, 6 do
-			local hit = workspace:Raycast(origin, unit * remaining, params)
+			local hit = workspace:Raycast(origin, unit * remaining, rayParams)
 			if not hit then
 				return true
 			end
@@ -220,10 +234,11 @@ return function(deps)
 			if not seeThrough then
 				return false
 			end
-			table.insert(ignore, inst)
-			params.FilterDescendantsInstances = ignore
-			remaining -= (hit.Position - origin).Magnitude
-			origin = hit.Position
+			rayIgnore[#rayIgnore + 1] = inst
+			rayParams.FilterDescendantsInstances = rayIgnore
+			local advanced = (hit.Position - origin).Magnitude
+			remaining -= advanced
+			origin = hit.Position + unit * 0.05
 			if remaining <= 0.05 then
 				return true
 			end
@@ -232,8 +247,11 @@ return function(deps)
 	end
 
 	function Aim:predictPos(part, root)
-		if not self.prediction or not part then
-			return part and part.Position or nil
+		if not part then
+			return nil
+		end
+		if not self.prediction then
+			return part.Position
 		end
 		local vel = Vector3.zero
 		if root and root:IsA("BasePart") then
@@ -247,90 +265,29 @@ return function(deps)
 	function Aim:screenDistPx(cam, worldPos)
 		local sp, on = cam:WorldToViewportPoint(worldPos)
 		if not on or sp.Z <= 0 then
-			return math.huge
+			return math.huge, nil
 		end
-		local cx, cy = cam.ViewportSize.X * 0.5, cam.ViewportSize.Y * 0.5
-		local dx, dy = sp.X - cx, sp.Y - cy
-		return math.sqrt(dx * dx + dy * dy)
+		local vs = cam.ViewportSize
+		local dx, dy = sp.X - vs.X * 0.5, sp.Y - vs.Y * 0.5
+		return math.sqrt(dx * dx + dy * dy), sp
 	end
 
 	function Aim:angleDeg(a, b)
 		return math.deg(math.acos(math.clamp(a:Dot(b), -1, 1)))
 	end
 
-	function Aim:pickTarget(cam, fovPx, boneList, stickyChar)
-		if stickyChar and stickyChar.Parent then
-			local hum = stickyChar:FindFirstChildOfClass("Humanoid")
-			local root = stickyChar:FindFirstChild("HumanoidRootPart")
-			if hum and root and hum.Health > 0 then
-				local plr = Players:GetPlayerFromCharacter(stickyChar)
-				if plr and self:passesFilters(plr, hum, stickyChar) then
-					local pt, part = self:bestPointOnChar(stickyChar, boneList, cam)
-					if pt and self:screenDistPx(cam, pt) <= fovPx * 1.25 then
-						return pt, stickyChar, part
-					end
-				end
-			end
-		end
-
-		local camPos = cam.CFrame.Position
-		local bestPt
-		local bestChar
-		local bestPart
-		local bestPx = fovPx
-		local maxD2 = self.maxDist * self.maxDist
-
-		for _, plr in ipairs(Players:GetPlayers()) do
-			if plr ~= LOCAL then
-				local char = plr.Character
-				local hum = char and char:FindFirstChildOfClass("Humanoid")
-				local root = char and char:FindFirstChild("HumanoidRootPart")
-				if hum and root and hum.Health > 0 and self:passesFilters(plr, hum, char) then
-					local delta = root.Position - camPos
-					if delta.X * delta.X + delta.Y * delta.Y + delta.Z * delta.Z <= maxD2 then
-						local pt, part = self:bestPointOnChar(char, boneList, cam)
-						if pt and self:isVisible(cam, camPos, pt, char) then
-							local px = self:screenDistPx(cam, pt)
-							if px < bestPx then
-								bestPx = px
-								bestPt = pt
-								bestChar = char
-								bestPart = part
-							end
-						end
-					end
-				end
-			end
-		end
-		return bestPt, bestChar, bestPart
-	end
-
-	function Aim:passesFilters(plr, hum, char)
-		if self.ignoreTeam and self:sameTeam(plr) then
-			return false
-		end
-		if self.ignoreKnocked and self:isKnocked(plr, hum, char) then
-			return false
-		end
-		return true
-	end
-
 	function Aim:bestPointOnChar(char, boneList, cam)
 		local root = char:FindFirstChild("HumanoidRootPart")
-		local bestPt
-		local bestPart
-		local bestPx = math.huge
-		for _, alias in ipairs(boneList) do
-			local part = self:getBonePart(char, alias)
+		local bestPt, bestPart, bestPx = nil, nil, math.huge
+		for i = 1, #boneList do
+			local part = self:getBonePart(char, boneList[i])
 			if part then
 				local pt = self:predictPos(part, root)
 				if pt then
-					pt = pt + Vector3.new(0, 0.05, 0)
+					pt += Vector3.new(0, 0.05, 0)
 					local px = self:screenDistPx(cam, pt)
 					if px < bestPx then
-						bestPx = px
-						bestPt = pt
-						bestPart = part
+						bestPx, bestPt, bestPart = px, pt, part
 					end
 				end
 			end
@@ -338,34 +295,95 @@ return function(deps)
 		return bestPt, bestPart
 	end
 
+	function Aim:pickTarget(cam, fovPx, boneList, stickyChar)
+		local camCF = cam.CFrame
+		local camPos = camCF.Position
+		local look = camCF.LookVector
+		local maxD2 = self.maxDist * self.maxDist
+
+		local function tryChar(char)
+			local hum = char:FindFirstChildOfClass("Humanoid")
+			local root = char:FindFirstChild("HumanoidRootPart")
+			if not hum or not root or hum.Health <= 0 then
+				return nil
+			end
+			local plr = Players:GetPlayerFromCharacter(char)
+			if not plr or not self:passesFilters(plr, hum, char) then
+				return nil
+			end
+			local delta = root.Position - camPos
+			local d2 = delta.X * delta.X + delta.Y * delta.Y + delta.Z * delta.Z
+			if d2 > maxD2 then
+				return nil
+			end
+			-- Skip clearly behind camera before bone project.
+			if delta:Dot(look) < -2 then
+				return nil
+			end
+			local pt, part = self:bestPointOnChar(char, boneList, cam)
+			if not pt or not self:isVisible(cam, camPos, pt, char) then
+				return nil
+			end
+			local px = self:screenDistPx(cam, pt)
+			return pt, char, part, px
+		end
+
+		if stickyChar and stickyChar.Parent then
+			local pt, ch, part, px = tryChar(stickyChar)
+			if pt and px <= fovPx * 1.35 then
+				return pt, ch, part
+			end
+		end
+
+		local bestPt, bestChar, bestPart, bestPx = nil, nil, nil, fovPx
+		local players = Players:GetPlayers()
+		for i = 1, #players do
+			local plr = players[i]
+			if plr ~= LOCAL then
+				local char = plr.Character
+				if char then
+					local pt, ch, part, px = tryChar(char)
+					if pt and px < bestPx then
+						bestPx, bestPt, bestChar, bestPart = px, pt, ch, part
+					end
+				end
+			end
+		end
+		return bestPt, bestChar, bestPart
+	end
+
 	function Aim:smoothingStrength()
 		return math.clamp(self.smoothing / 100, 0.03, 1)
 	end
 
-	function Aim:rotateToward(cam, worldPos, capDeg)
-		if self.useMouseDrive then
-			return self:mouseDriveToward(cam, worldPos)
-		end
+	-- Direct camera rotate — used by silent so the snap lands before the shot.
+	function Aim:cameraSnapToward(cam, worldPos, capDeg)
 		local camPos = cam.CFrame.Position
 		local look = cam.CFrame.LookVector
-		local want = (worldPos - camPos).Unit
+		local want = (worldPos - camPos)
+		if want.Magnitude < 1e-4 then
+			return true
+		end
+		want = want.Unit
 		local ang = self:angleDeg(look, want)
-		if ang < 0.03 then
+		if ang < 0.02 then
 			return true
 		end
 		local px = self:screenDistPx(cam, worldPos)
 		if px <= self.deadzonePx then
 			return true
 		end
-		local strength = self:smoothingStrength()
-		if self.aimbotEnabled and self:aimKeysHeld() then
-			strength = math.clamp(strength * 2.2, 0.15, 1)
-		end
-		local step = math.min(capDeg, ang) * strength
+		local step = math.min(capDeg, ang)
 		local t = step / math.max(ang, 0.001)
-		local newLook = look:Lerp(want, t).Unit
-		cam.CFrame = CFrame.lookAt(camPos, camPos + newLook)
-		return ang < 0.2
+		cam.CFrame = CFrame.lookAt(camPos, camPos + look:Lerp(want, t).Unit)
+		return ang < 0.15
+	end
+
+	function Aim:rotateToward(cam, worldPos, capDeg)
+		if self.useMouseDrive then
+			return self:mouseDriveToward(cam, worldPos)
+		end
+		return self:cameraSnapToward(cam, worldPos, capDeg)
 	end
 
 	function Aim:mouseDriveToward(cam, worldPos)
@@ -373,7 +391,8 @@ return function(deps)
 		if not on or sp.Z <= 0 then
 			return false
 		end
-		local cx, cy = cam.ViewportSize.X * 0.5, cam.ViewportSize.Y * 0.5
+		local vs = cam.ViewportSize
+		local cx, cy = vs.X * 0.5, vs.Y * 0.5
 		local dx, dy = sp.X - cx, sp.Y - cy
 		local dist = math.sqrt(dx * dx + dy * dy)
 		if dist <= self.deadzonePx then
@@ -383,16 +402,15 @@ return function(deps)
 		if self.aimbotEnabled and self:aimKeysHeld() then
 			factor = math.clamp(factor * 2.5, 0.08, 0.55)
 		end
-		-- Mouse deltas are whole pixels: carry the fraction between frames and
-		-- force at least 1px, otherwise small (far-target) offsets never move.
 		local mx = dx * factor + self.mouseRemX
 		local my = dy * factor + self.mouseRemY
 		local sx = mx >= 0 and math.floor(mx) or math.ceil(mx)
 		local sy = my >= 0 and math.floor(my) or math.ceil(my)
-		if sx == 0 and math.abs(dx) > self.deadzonePx * 0.5 then
+		local halfDead = self.deadzonePx * 0.5
+		if sx == 0 and math.abs(dx) > halfDead then
 			sx = dx > 0 and 1 or -1
 		end
-		if sy == 0 and math.abs(dy) > self.deadzonePx * 0.5 then
+		if sy == 0 and math.abs(dy) > halfDead then
 			sy = dy > 0 and 1 or -1
 		end
 		self.mouseRemX = math.clamp(mx - sx, -1, 1)
@@ -400,21 +418,17 @@ return function(deps)
 		if sx == 0 and sy == 0 then
 			return true
 		end
-		local moved = false
 		if type(mousemoverel) == "function" then
 			mousemoverel(sx, sy)
-			moved = true
-		else
-			pcall(function()
-				local vim = game:GetService("VirtualInputManager")
-				vim:SendMouseMoveEvent(cx + sx, cy + sy, game)
-				moved = true
-			end)
+			return true
 		end
-		return moved
+		local ok = pcall(function()
+			game:GetService("VirtualInputManager"):SendMouseMoveEvent(cx + sx, cy + sy, game)
+		end)
+		return ok
 	end
 
-	function Aim:fovRadiusPx(cam, px)
+	function Aim:fovRadiusPx(_, px)
 		return math.clamp(px, 8, 600)
 	end
 
@@ -424,10 +438,7 @@ return function(deps)
 			crossGui = nil
 		end
 		table.clear(crossParts)
-		fovRing = nil
-		fovStroke = nil
-		fovFill = nil
-		statusLabel = nil
+		fovRing, fovStroke, fovFill, statusLabel = nil, nil, nil, nil
 		self.lastFovRadius = -1
 		self.lastShowCross = nil
 		self.lastShowRing = nil
@@ -448,7 +459,6 @@ return function(deps)
 		crossGui:SetAttribute("FustBundle", true)
 		crossGui.Parent = LOCAL:WaitForChild("PlayerGui")
 
-		-- One stroked circle instead of dozens of segment frames (was a major hitch).
 		fovRing = Instance.new("Frame")
 		fovRing.Name = "FovRing"
 		fovRing.BackgroundTransparency = 1
@@ -488,13 +498,11 @@ return function(deps)
 			f.Size = size
 			f.Position = pos
 			f.Parent = crossGui
-			table.insert(crossParts, f)
+			crossParts[#crossParts + 1] = f
 			return f
 		end
 
-		local thick = self.crossThick
-		local size = self.crossSize
-		local gap = self.crossGap
+		local thick, size, gap = self.crossThick, self.crossSize, self.crossGap
 		bar("L", UDim2.fromOffset(size, thick), UDim2.fromScale(0.5, 0.5) + UDim2.fromOffset(-(gap + size * 0.5), 0))
 		bar("R", UDim2.fromOffset(size, thick), UDim2.fromScale(0.5, 0.5) + UDim2.fromOffset(gap + size * 0.5, 0))
 		bar("U", UDim2.fromOffset(thick, size), UDim2.fromScale(0.5, 0.5) + UDim2.fromOffset(0, -(gap + size * 0.5)))
@@ -507,7 +515,7 @@ return function(deps)
 		dot.Position = UDim2.fromScale(0.5, 0.5)
 		dot.Size = UDim2.fromOffset(math.max(2, thick), math.max(2, thick))
 		dot.Parent = crossGui
-		table.insert(crossParts, dot)
+		crossParts[#crossParts + 1] = dot
 
 		statusLabel = Instance.new("TextLabel")
 		statusLabel.Name = "VisualCheck"
@@ -525,27 +533,30 @@ return function(deps)
 	end
 
 	function Aim:updateVisuals(cam, dt)
-		if not crossGui or not crossGui.Parent then
-			if self.drawFov or self.filledFov or self.showCrosshair or self.visualCheck then
-				self:ensureCrosshair()
-			else
-				return
+		local needGui = self.drawFov or self.filledFov or self.showCrosshair or self.visualCheck
+		if not needGui then
+			if crossGui then
+				self:destroyCrosshair()
 			end
+			return
+		end
+		if not crossGui or not crossGui.Parent then
+			self:ensureCrosshair()
 		end
 
 		local showCross = self.showCrosshair
 		if self.lastShowCross ~= showCross then
 			self.lastShowCross = showCross
-			for _, p in ipairs(crossParts) do
+			for i = 1, #crossParts do
+				local p = crossParts[i]
 				p.Visible = showCross
 				p.BackgroundColor3 = self.crossColor
 			end
 		end
 
-		local radius = self:fovRadiusPx(cam, self.weaponFovPx)
+		local diam = math.floor(self:fovRadiusPx(cam, self.weaponFovPx) * 2 + 0.5)
 		local showRing = self.drawFov
 		local showFill = self.filledFov and self.drawFov
-		local diam = math.floor(radius * 2 + 0.5)
 
 		if fovRing and (self.lastShowRing ~= showRing or self.lastFovRadius ~= diam) then
 			self.lastShowRing = showRing
@@ -586,13 +597,13 @@ return function(deps)
 		self.visualHudAcc = 0
 		local pt, ch = self:pickTarget(cam, self.weaponFovPx, self.targetBones, self.stickyChar)
 		local text = string.format(
-			"Aim:%s key:%s vis:%s | tgt:%s ads:%s mouse:%s",
+			"Aim:%s key:%s vis:%s | tgt:%s ads:%s silent:%s",
 			self.aimbotEnabled and "on" or "off",
 			self:aimKeysHeld() and "hold" or "—",
 			self.visibleCheck and "on" or "off",
 			pt and (ch and ch.Name or "?") or "none",
 			self:canAim() and "yes" or "no",
-			self.useMouseDrive and "on" or "off"
+			self.silentOn and "on" or "off"
 		)
 		if self.lastHudText ~= text then
 			self.lastHudText = text
@@ -603,16 +614,22 @@ return function(deps)
 		end
 	end
 
+	-- Camera silent: snap cam onto target on fire. Raycast only for LOS when Visible check is on.
 	function Aim:runSilentBurst(cam)
 		if not self.silentOn or not self:canAim() then
 			return
 		end
 		local pt, ch = self:pickTarget(cam, self.silentFovPx, self.targetBones, self.stickyChar)
-		if pt then
-			self.stickyChar = ch
-			for _ = 1, 2 do
-				self:rotateToward(cam, pt, self.silentMaxDeg * self.silentStrength)
-			end
+		if not pt then
+			return
+		end
+		self.stickyChar = ch
+		local cap = self.silentMaxDeg * self.silentStrength
+		local steps = math.clamp(math.floor(self.silentSteps + 0.5), 1, 6)
+		for _ = 1, steps do
+			self:cameraSnapToward(cam, pt, cap)
+			-- Re-project after each step so prediction stays accurate mid-snap.
+			pt = select(1, self:bestPointOnChar(ch, self.targetBones, cam)) or pt
 		end
 	end
 
@@ -621,7 +638,7 @@ return function(deps)
 			self.triggerAcc = 0
 			return
 		end
-		local pt, ch = self:pickTarget(cam, math.max(8, self.deadzonePx + 2), self.triggerBones, nil)
+		local pt = self:pickTarget(cam, math.max(8, self.deadzonePx + 2), self.triggerBones, nil)
 		if not pt then
 			self.triggerAcc = 0
 			return
@@ -643,8 +660,8 @@ return function(deps)
 		self.triggerAcc = 0
 		pcall(function()
 			local vim = game:GetService("VirtualInputManager")
-			local cx = cam.ViewportSize.X * 0.5
-			local cy = cam.ViewportSize.Y * 0.5
+			local vs = cam.ViewportSize
+			local cx, cy = vs.X * 0.5, vs.Y * 0.5
 			vim:SendMouseButtonEvent(cx, cy, 0, true, game, 0)
 			task.defer(function()
 				vim:SendMouseButtonEvent(cx, cy, 0, false, game, 0)
@@ -677,49 +694,51 @@ return function(deps)
 
 			self:updateVisuals(cam, dt)
 
-			if self:shouldRunAimbot() then
+			local runningAim = self:shouldRunAimbot()
+			local silentLive = self.silentOn and (self.firingSilent or os.clock() < self.silentUntil) and self:canAim()
+
+			if runningAim then
 				local pt, ch = self:pickTarget(cam, self.weaponFovPx, self.targetBones, self.stickyChar)
 				if pt then
 					self.stickyChar = ch
 					local cap = self.lockCapDeg
-					if self.smoothing >= 50 then
-						cap = cap * 0.65
+					local sm = self.smoothing
+					if sm >= 50 then
+						cap *= 0.65
 					else
-						cap = cap * (1 + (50 - math.clamp(self.smoothing, 1, 50)) * 0.02)
+						cap *= 1 + (50 - math.clamp(sm, 1, 50)) * 0.02
 					end
 					self:rotateToward(cam, pt, cap)
 				else
 					self.stickyChar = nil
 				end
-			elseif not self:aimKeysHeld() then
+			elseif not self:aimKeysHeld() and not silentLive then
 				self.stickyChar = nil
 			end
 
-			if self.firingSilent then
+			if silentLive then
 				self:runSilentBurst(cam)
 			end
 
-			self:tryTriggerbot(cam, dt)
+			if self.triggerEnabled then
+				self:tryTriggerbot(cam, dt)
+			end
 		end)
 
 		self.inputBeganConn = UserInputService.InputBegan:Connect(function(input, processed)
-			if processed then
+			if processed or input.UserInputType ~= Enum.UserInputType.MouseButton1 then
 				return
 			end
-			if input.UserInputType ~= Enum.UserInputType.MouseButton1 then
-				return
-			end
-			if not self:canAim() then
+			if not self.silentOn or not self:canAim() then
 				return
 			end
 			local cam = workspace.CurrentCamera
 			if not cam then
 				return
 			end
-			if self.silentOn then
-				self.firingSilent = true
-				self:runSilentBurst(cam)
-			end
+			self.firingSilent = true
+			self.silentUntil = os.clock() + SILENT_HOLD
+			self:runSilentBurst(cam)
 		end)
 
 		self.inputEndedConn = UserInputService.InputEnded:Connect(function(input)
@@ -744,6 +763,7 @@ return function(deps)
 		self.bound = false
 		self.stickyChar = nil
 		self.firingSilent = false
+		self.silentUntil = 0
 		self.triggerAcc = 0
 		self.mouseRemX = 0
 		self.mouseRemY = 0

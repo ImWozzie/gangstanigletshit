@@ -92,6 +92,7 @@ return function(deps)
 	local overlay
 	local slots = {}
 	local targets = {}
+	local pickBuf = {} -- reused by pickTargets to avoid alloc every scan
 	local partCache = setmetatable({}, { __mode = "k" })
 	local heartbeatConn
 	local scanAcc, renderAcc = 0, 0
@@ -278,32 +279,44 @@ return function(deps)
 	end
 
 	local function pickTargets(origin)
-		local list = {}
-		if not origin then
-			return list
-		end
-		local maxD2 = Esp.maxDist * Esp.maxDist
-		for _, plr in ipairs(Players:GetPlayers()) do
-			if plr ~= LOCAL then
-				local char = plr.Character
-				local hum = char and char:FindFirstChildOfClass("Humanoid")
-				local root = char and char:FindFirstChild("HumanoidRootPart")
-				if hum and root and hum.Health > 0 then
-					local d = root.Position - origin
-					local d2 = d.X * d.X + d.Y * d.Y + d.Z * d.Z
-					if d2 <= maxD2 then
-						list[#list + 1] = { plr = plr, char = char, hum = hum, d2 = d2 }
+		local count = 0
+		if origin then
+			local maxD2 = Esp.maxDist * Esp.maxDist
+			local players = Players:GetPlayers()
+			for i = 1, #players do
+				local plr = players[i]
+				if plr ~= LOCAL then
+					local char = plr.Character
+					local hum = char and char:FindFirstChildOfClass("Humanoid")
+					local root = char and char:FindFirstChild("HumanoidRootPart")
+					if hum and root and hum.Health > 0 then
+						local d = root.Position - origin
+						local d2 = d.X * d.X + d.Y * d.Y + d.Z * d.Z
+						if d2 <= maxD2 then
+							count += 1
+							local row = pickBuf[count]
+							if row then
+								row.plr, row.char, row.hum, row.d2 = plr, char, hum, d2
+								row.cache, row.held, row.armor, row.dist = nil, nil, nil, nil
+							else
+								pickBuf[count] = { plr = plr, char = char, hum = hum, d2 = d2 }
+							end
+						end
 					end
 				end
 			end
 		end
-		table.sort(list, function(a, b)
+		for i = #pickBuf, count + 1, -1 do
+			pickBuf[i] = nil
+		end
+		table.sort(pickBuf, function(a, b)
 			return a.d2 < b.d2
 		end)
-		for i = #list, math.min(Esp.maxTargets, MAX_SLOTS) + 1, -1 do
-			list[i] = nil
+		local keep = math.min(Esp.maxTargets, MAX_SLOTS, count)
+		for i = #pickBuf, keep + 1, -1 do
+			pickBuf[i] = nil
 		end
-		return list
+		return pickBuf
 	end
 
 	local function shouldRun()
@@ -355,7 +368,8 @@ return function(deps)
 	local function scan()
 		local myRoot = LOCAL.Character and LOCAL.Character:FindFirstChild("HumanoidRootPart")
 		targets = pickTargets(myRoot and myRoot.Position)
-		for _, t in ipairs(targets) do
+		for i = 1, #targets do
+			local t = targets[i]
 			t.cache = partsFor(t.char)
 			t.dist = math.sqrt(t.d2)
 			t.held = Esp.held and heldText(t.char) or nil
@@ -630,11 +644,16 @@ return function(deps)
 			scanAcc += dt
 			renderAcc += dt
 			if scanAcc >= SCAN_TICK then
-				scanAcc = 0
+				scanAcc -= SCAN_TICK
 				scan()
 			end
-			if renderAcc >= 1 / math.clamp(Esp.rate, 5, 240) then
-				renderAcc = 0
+			local interval = 1 / math.clamp(Esp.rate, 5, 240)
+			if renderAcc >= interval then
+				-- Subtract (don't zero) so high FPS doesn't hitch when Heartbeat stalls.
+				renderAcc -= interval
+				if renderAcc > interval then
+					renderAcc = 0
+				end
 				render()
 			end
 		end)

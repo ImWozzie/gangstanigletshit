@@ -4,7 +4,7 @@ return function(deps)
 	local Esp = deps.Esp
 	local Aim = deps.Aim
 	local World = deps.World
-	local bundleVersion = deps.BundleVersion or "2.4.9"
+	local bundleVersion = deps.BundleVersion or "2.5.0"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false
@@ -279,29 +279,6 @@ return function(deps)
 			Aim.maxDist = v
 		end,
 	})
-	aimSec:Toggle({
-		Name = "Silent aim (camera)",
-		Description = "Snap camera on LMB — not bullet redirect",
-		Default = false,
-		Risky = true,
-		Flag = "Fust_SilentOn",
-		Callback = function(v)
-			Aim.silentOn = v
-			Aim:syncBind()
-		end,
-	})
-	aimSec:Slider({
-		Name = "Silent aim FOV",
-		Min = 15,
-		Max = 250,
-		Default = 90,
-		Increment = 1,
-		Flag = "Fust_SilentFovPx",
-		Callback = function(v)
-			Aim.silentFovPx = v
-		end,
-	})
-
 	aimSec:Slider({
 		Name = "Lock strength",
 		Description = "Max degrees per frame toward target",
@@ -312,6 +289,55 @@ return function(deps)
 		Flag = "Fust_LockCap",
 		Callback = function(v)
 			Aim.lockCapDeg = v
+		end,
+	})
+
+	local silentSec = aimTab:Section({ Name = "Silent aim", Icon = "crosshair", Side = "Left" })
+	silentSec:Label("Camera snap on LMB (LOS raycast when Visible check is on). Not bullet redirect — GunControl hooks get you banned.")
+	silentSec:Toggle({
+		Name = "Silent aim (camera)",
+		Description = "Multi-step camera snap on fire + short hold",
+		Default = false,
+		Risky = true,
+		Flag = "Fust_SilentOn",
+		Callback = function(v)
+			Aim.silentOn = v
+			Aim:syncBind()
+		end,
+	})
+	silentSec:Slider({
+		Name = "Silent FOV",
+		Min = 15,
+		Max = 250,
+		Default = 90,
+		Increment = 1,
+		Flag = "Fust_SilentFovPx",
+		Callback = function(v)
+			Aim.silentFovPx = v
+		end,
+	})
+	silentSec:Slider({
+		Name = "Silent max degrees",
+		Description = "Cap per snap step — keep modest to look less snapped",
+		Min = 2,
+		Max = 14,
+		Default = 8,
+		Increment = 0.25,
+		Flag = "Fust_SilentMaxDeg",
+		Callback = function(v)
+			Aim.silentMaxDeg = v
+		end,
+	})
+	silentSec:Slider({
+		Name = "Silent steps",
+		Description = "Camera refine passes on each click",
+		Min = 1,
+		Max = 6,
+		Default = 3,
+		Increment = 1,
+		Flag = "Fust_SilentSteps",
+		Callback = function(v)
+			Aim.silentSteps = v
 		end,
 	})
 
@@ -630,7 +656,7 @@ return function(deps)
 	end
 
 	local safeSec = aimTab:Section({ Name = "Safety", Icon = "shield", Side = "Right" })
-	safeSec:Label("Panic kills aimbot, silent, trigger and time changer instantly. ESP + camera fullbright stay on (they don't touch the AC).")
+	safeSec:Label("Panic kills aimbot, silent, trigger and time changer. ESP stays on. Lighting fullbright is permanently disabled.")
 	safeSec:Button({
 		Name = "Panic now",
 		Description = "Disable everything risky",
