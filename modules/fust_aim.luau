@@ -6,8 +6,8 @@ return function(deps)
 	local LOCAL = deps.LocalPlayer
 
 	local AIM_RENDER = "FustSafeAimAssist"
-	local FOV_SEGMENTS = 56
 	local TRIGGER_COOLDOWN = 0.05
+	local VISUAL_HUD_TICK = 0.2
 
 	local BONE_ALIASES = {
 		Head = "Head",
@@ -65,13 +65,20 @@ return function(deps)
 		firingSilent = false,
 		lastTrigger = 0,
 		triggerAcc = 0,
+		visualHudAcc = 0,
+		lastHudText = "",
+		lastFovRadius = -1,
+		lastShowCross = nil,
+		lastShowRing = nil,
+		lastShowFill = nil,
 		inputBeganConn = nil,
 		inputEndedConn = nil,
 	}
 
 	local crossGui
 	local crossParts = {}
-	local fovRing = {}
+	local fovRing
+	local fovStroke
 	local fovFill
 	local statusLabel
 
@@ -417,9 +424,15 @@ return function(deps)
 			crossGui = nil
 		end
 		table.clear(crossParts)
-		table.clear(fovRing)
+		fovRing = nil
+		fovStroke = nil
 		fovFill = nil
 		statusLabel = nil
+		self.lastFovRadius = -1
+		self.lastShowCross = nil
+		self.lastShowRing = nil
+		self.lastShowFill = nil
+		self.lastHudText = ""
 	end
 
 	function Aim:ensureCrosshair()
@@ -434,6 +447,24 @@ return function(deps)
 		crossGui.DisplayOrder = 210
 		crossGui:SetAttribute("FustBundle", true)
 		crossGui.Parent = LOCAL:WaitForChild("PlayerGui")
+
+		-- One stroked circle instead of dozens of segment frames (was a major hitch).
+		fovRing = Instance.new("Frame")
+		fovRing.Name = "FovRing"
+		fovRing.BackgroundTransparency = 1
+		fovRing.BorderSizePixel = 0
+		fovRing.AnchorPoint = Vector2.new(0.5, 0.5)
+		fovRing.Position = UDim2.fromScale(0.5, 0.5)
+		fovRing.Visible = false
+		fovRing.Parent = crossGui
+		local ringCorner = Instance.new("UICorner")
+		ringCorner.CornerRadius = UDim.new(1, 0)
+		ringCorner.Parent = fovRing
+		fovStroke = Instance.new("UIStroke")
+		fovStroke.Thickness = 1.5
+		fovStroke.Transparency = 0.25
+		fovStroke.Color = self.fovRingColor
+		fovStroke.Parent = fovRing
 
 		fovFill = Instance.new("Frame")
 		fovFill.Name = "FovFill"
@@ -478,19 +509,6 @@ return function(deps)
 		dot.Parent = crossGui
 		table.insert(crossParts, dot)
 
-		for i = 1, FOV_SEGMENTS do
-			local seg = Instance.new("Frame")
-			seg.Name = "F" .. i
-			seg.BorderSizePixel = 0
-			seg.BackgroundColor3 = self.fovRingColor
-			seg.BackgroundTransparency = 0.2
-			seg.AnchorPoint = Vector2.new(0.5, 0.5)
-			seg.Size = UDim2.fromOffset(2, 2)
-			seg.Visible = false
-			seg.Parent = crossGui
-			fovRing[i] = seg
-		end
-
 		statusLabel = Instance.new("TextLabel")
 		statusLabel.Name = "VisualCheck"
 		statusLabel.BackgroundTransparency = 1
@@ -506,7 +524,7 @@ return function(deps)
 		statusLabel.Parent = crossGui
 	end
 
-	function Aim:updateVisuals(cam)
+	function Aim:updateVisuals(cam, dt)
 		if not crossGui or not crossGui.Parent then
 			if self.drawFov or self.filledFov or self.showCrosshair or self.visualCheck then
 				self:ensureCrosshair()
@@ -515,55 +533,73 @@ return function(deps)
 			end
 		end
 
-		for _, p in ipairs(crossParts) do
-			p.Visible = self.showCrosshair
-			p.BackgroundColor3 = self.crossColor
+		local showCross = self.showCrosshair
+		if self.lastShowCross ~= showCross then
+			self.lastShowCross = showCross
+			for _, p in ipairs(crossParts) do
+				p.Visible = showCross
+				p.BackgroundColor3 = self.crossColor
+			end
 		end
 
 		local radius = self:fovRadiusPx(cam, self.weaponFovPx)
-		local cx, cy = cam.ViewportSize.X * 0.5, cam.ViewportSize.Y * 0.5
 		local showRing = self.drawFov
-		for i = 1, FOV_SEGMENTS do
-			local seg = fovRing[i]
-			if seg then
-				if showRing then
-					local t = (i / FOV_SEGMENTS) * math.pi * 2
-					seg.Visible = true
-					seg.BackgroundColor3 = self.fovRingColor
-					seg.Position = UDim2.fromOffset(cx + math.cos(t) * radius, cy + math.sin(t) * radius)
-				else
-					seg.Visible = false
+		local showFill = self.filledFov and self.drawFov
+		local diam = math.floor(radius * 2 + 0.5)
+
+		if fovRing and (self.lastShowRing ~= showRing or self.lastFovRadius ~= diam) then
+			self.lastShowRing = showRing
+			fovRing.Visible = showRing
+			if showRing then
+				fovRing.Size = UDim2.fromOffset(diam, diam)
+				if fovStroke then
+					fovStroke.Color = self.fovRingColor
 				end
 			end
 		end
 
-		if fovFill then
-			if self.filledFov and self.drawFov then
-				fovFill.Visible = true
+		if fovFill and (self.lastShowFill ~= showFill or (showFill and self.lastFovRadius ~= diam)) then
+			self.lastShowFill = showFill
+			fovFill.Visible = showFill
+			if showFill then
 				fovFill.BackgroundColor3 = self.fovRingColor
 				fovFill.BackgroundTransparency = self.fovFillTransparency
-				fovFill.Size = UDim2.fromOffset(radius * 2, radius * 2)
-			else
-				fovFill.Visible = false
+				fovFill.Size = UDim2.fromOffset(diam, diam)
 			end
 		end
+		self.lastFovRadius = diam
 
-		if statusLabel then
-			if self.visualCheck then
-				local pt, ch = self:pickTarget(cam, self.weaponFovPx, self.targetBones, self.stickyChar)
-				statusLabel.Visible = true
-				statusLabel.Text = string.format(
-					"Aim:%s key:%s vis:%s | tgt:%s ads:%s mouse:%s",
-					self.aimbotEnabled and "on" or "off",
-					self:aimKeysHeld() and "hold" or "—",
-					self.visibleCheck and "on" or "off",
-					pt and (ch and ch.Name or "?") or "none",
-					self:canAim() and "yes" or "no",
-					self.useMouseDrive and "on" or "off"
-				)
-			else
+		if not statusLabel then
+			return
+		end
+		if not self.visualCheck then
+			if statusLabel.Visible then
 				statusLabel.Visible = false
 			end
+			return
+		end
+
+		self.visualHudAcc += dt or 0
+		if self.visualHudAcc < VISUAL_HUD_TICK then
+			return
+		end
+		self.visualHudAcc = 0
+		local pt, ch = self:pickTarget(cam, self.weaponFovPx, self.targetBones, self.stickyChar)
+		local text = string.format(
+			"Aim:%s key:%s vis:%s | tgt:%s ads:%s mouse:%s",
+			self.aimbotEnabled and "on" or "off",
+			self:aimKeysHeld() and "hold" or "—",
+			self.visibleCheck and "on" or "off",
+			pt and (ch and ch.Name or "?") or "none",
+			self:canAim() and "yes" or "no",
+			self.useMouseDrive and "on" or "off"
+		)
+		if self.lastHudText ~= text then
+			self.lastHudText = text
+			statusLabel.Text = text
+		end
+		if not statusLabel.Visible then
+			statusLabel.Visible = true
 		end
 	end
 
@@ -618,9 +654,6 @@ return function(deps)
 
 	function Aim:syncBind()
 		if isActive() then
-			if self.bound then
-				self:unbind()
-			end
 			self:bind()
 		else
 			self:unbind()
@@ -642,7 +675,7 @@ return function(deps)
 				return
 			end
 
-			self:updateVisuals(cam)
+			self:updateVisuals(cam, dt)
 
 			if self:shouldRunAimbot() then
 				local pt, ch = self:pickTarget(cam, self.weaponFovPx, self.targetBones, self.stickyChar)

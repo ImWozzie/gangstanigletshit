@@ -99,6 +99,7 @@ return function(deps)
 	local BAR_BG = Color3.fromRGB(18, 18, 18)
 	local HP_LOW = Color3.fromRGB(230, 70, 60)
 	local HP_HIGH = Color3.fromRGB(90, 210, 110)
+	local HELD_COLOR = Color3.fromRGB(255, 210, 120)
 	local HEAD_UP = Vector3.new(0, 0.6, 0)
 	local FEET_DOWN = Vector3.new(0, 2.9, 0)
 
@@ -589,7 +590,7 @@ return function(deps)
 						sub.key = subKey
 						sub.f.Text = table.concat(subChunks, "  ·  ")
 					end
-					local subCol = Esp.held and t.held and Color3.fromRGB(255, 210, 120) or color
+					local subCol = (Esp.held and t.held) and HELD_COLOR or color
 					if sub.col ~= subCol then
 						sub.col = subCol
 						sub.f.TextColor3 = subCol

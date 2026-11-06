@@ -4,7 +4,7 @@ return function(deps)
 	local Esp = deps.Esp
 	local Aim = deps.Aim
 	local World = deps.World
-	local bundleVersion = deps.BundleVersion or "2.4.2"
+	local bundleVersion = deps.BundleVersion or "2.4.3"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false
@@ -345,8 +345,8 @@ return function(deps)
 	})
 	miscSec:Toggle({
 		Name = "Visual check HUD",
-		Description = "Status line (shows vis on/off, target, ADS)",
-		Default = true,
+		Description = "Status line — throttled; leave off for less CPU",
+		Default = false,
 		Flag = "Fust_VisualHud",
 		Callback = function(v)
 			Aim.visualCheck = v
