@@ -111,9 +111,15 @@ When adding features, extend the `Aim` table defaults, implement behavior in `fu
 ## ESP module (`fust_esp.luau`) — constraints
 
 - Overlays live under **local PlayerGui** with attribute `FustBaseEsp = true`
-- Heartbeat ~5.5 Hz, capped targets, loop stops when master off
+- One Heartbeat, stopped when master is off:
+  - **Scan** every 0.25 s — closest `maxTargets` players in `maxDist`, body parts cached per character until one goes missing
+  - **Render** at `Esp.rate` Hz (slider 5–60, default 30) — projects cached parts and draws
+- Frames are pooled per player slot (`MAX_SLOTS = 20`, made on first use); every property is written **only when it changes** — keep it that way when adding visuals
+- Off-screen / behind-camera players are skipped before drawing
+- Skeleton: R15 (14 bones, 6-bone LOD past 180 studs) and R6 (joints from part CFrames); bones overlap by line thickness, optional rounded joints and dark outline
 - No highlights on other players’ characters, no Drawing library
-- Tunables: box, skeleton LOD, name, distance, health bar + **health bar range slider**
+- `Esp` fields: `master, maxDist, maxTargets, rate, box, boxStyle ("Full" | "Corners"), outline, skeleton, joints, skelDist, name, distance, healthBar, healthBarMaxDist, healthText, color, thickness`
+- AVOID.md suggests 5–8 Hz for the lowest profile; the rate slider is the knob
 
 ---
 
@@ -217,4 +223,4 @@ Verify: `__FustBundleVersion`, Aim fields (e.g. `weaponFovPx`), menu tab **Aimbo
 
 ---
 
-Last aligned with bundle **v2.2.2** — update this file when architecture or entrypoints change.
+Last aligned with bundle **v2.3.0** — update this file when architecture or entrypoints change.
