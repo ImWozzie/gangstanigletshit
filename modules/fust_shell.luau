@@ -4,7 +4,7 @@ return function(deps)
 	local Esp = deps.Esp
 	local Aim = deps.Aim
 	local World = deps.World
-	local bundleVersion = deps.BundleVersion or "2.4.6"
+	local bundleVersion = deps.BundleVersion or "2.4.7"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false
@@ -543,8 +543,9 @@ return function(deps)
 	local lightSec = worldTab:Section({ Name = "Lighting", Icon = "sun", Side = "Left" })
 	lightSec:Toggle({
 		Name = "Fullbright",
-		Description = "Real PointLights on camera — does not write Lighting (avoids FustSky)",
+		Description = "Real Lighting ambient/brightness — re-applied after FustSky so it doesn't blink",
 		Default = false,
+		Risky = true,
 		Flag = "Fust_Fullbright",
 		Callback = function(v)
 			World.fullbrightOn = v
@@ -552,13 +553,12 @@ return function(deps)
 		end,
 	})
 	lightSec:Slider({
-		Name = "Light brightness",
-		Description = "PointLight strength (engine range capped at 120 — we use a light ring)",
-		Min = 2,
-		Max = 30,
-		Default = 12,
-		Increment = 0.5,
-		Flag = "Fust_FbLightBright",
+		Name = "Fullbright brightness",
+		Min = 0.5,
+		Max = 6,
+		Default = 2,
+		Increment = 0.1,
+		Flag = "Fust_FbBright2",
 		Callback = function(v)
 			World.brightness = v
 			if World.fullbrightOn then
@@ -566,6 +566,7 @@ return function(deps)
 			end
 		end,
 	})
+	lightSec:Label("FustSky may still report brighter Lighting after ~3s while ACM is on. Use an alt.")
 	local timeSec = worldTab:Section({ Name = "Time", Icon = "clock", Side = "Right" })
 	timeSec:Label("Making night into day gets reported by FustSky after ~3s. Darker times are not flagged.")
 	timeSec:Toggle({

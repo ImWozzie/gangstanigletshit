@@ -1,122 +1,93 @@
 -- Client visuals / time. factory(deps) -> World
--- FustSky reports Lighting Ambient/Brightness/Exposure rises, so fullbright does
--- not write Lighting. Roblox clamps PointLight.Range to 120 — a ring of lights
--- around the camera covers a much larger volume with real illumination.
+-- Fullbright writes Lighting (real brightness). FustSky rewrites Ambient/etc on
+-- Heartbeat, so we re-apply on RenderStepped Last each frame to stop strobing.
+-- FustSky still detects brighter-than-wanted values and may report via MotionSync
+-- after ~3s while ACM is on — marked Risky in the UI.
 return function(deps)
 	local Lighting = game:GetService("Lighting")
 	local RunService = deps.RunService
 
-	local RING = {
-		Vector3.new(0, 0, 0),
-		Vector3.new(90, 0, 0),
-		Vector3.new(-90, 0, 0),
-		Vector3.new(0, 0, 90),
-		Vector3.new(0, 0, -90),
-		Vector3.new(0, 50, 0),
-		Vector3.new(0, -20, 0),
-		Vector3.new(70, 30, 70),
-		Vector3.new(-70, 30, -70),
-		Vector3.new(70, 30, -70),
-		Vector3.new(-70, 30, 70),
-	}
+	local FB_STEP = "FustFullbright"
 
 	local World = {
 		fullbrightOn = false,
-		brightness = 12,
+		brightness = 2,
 		timeControlOn = false,
 		clockTime = 14,
-		folder = nil,
-		anchors = {},
-		followConn = nil,
-		camConn = nil,
+		saved = nil,
+		fbBound = false,
 		timeConn = nil,
 	}
 
-	local function destroyLights()
-		if World.followConn then
-			World.followConn:Disconnect()
-			World.followConn = nil
-		end
-		if World.camConn then
-			World.camConn:Disconnect()
-			World.camConn = nil
-		end
-		if World.folder then
-			World.folder:Destroy()
-			World.folder = nil
-		end
-		table.clear(World.anchors)
-	end
-
-	local function ensureLights()
-		if World.folder and World.folder.Parent then
+	local function capture()
+		if World.saved then
 			return
 		end
-		destroyLights()
+		World.saved = {
+			Ambient = Lighting.Ambient,
+			OutdoorAmbient = Lighting.OutdoorAmbient,
+			Brightness = Lighting.Brightness,
+			ExposureCompensation = Lighting.ExposureCompensation,
+			GlobalShadows = Lighting.GlobalShadows,
+			ClockTime = Lighting.ClockTime,
+		}
+	end
 
-		local folder = Instance.new("Folder")
-		folder.Name = "FustFBLights"
-		folder.Parent = workspace.CurrentCamera or workspace
-		World.folder = folder
-
-		for i, offset in ipairs(RING) do
-			local part = Instance.new("Part")
-			part.Name = "FB" .. i
-			part.Anchored = true
-			part.CanCollide = false
-			part.CanQuery = false
-			part.CanTouch = false
-			part.CastShadow = false
-			part.Transparency = 1
-			part.Size = Vector3.new(0.2, 0.2, 0.2)
-			part.Parent = folder
-
-			local light = Instance.new("PointLight")
-			light.Name = "Light"
-			light.Shadows = false
-			light.Color = Color3.new(1, 1, 1)
-			light.Brightness = World.brightness
-			light.Range = 120
-			light.Parent = part
-
-			World.anchors[#World.anchors + 1] = { part = part, light = light, offset = offset }
+	local function restoreLighting()
+		local s = World.saved
+		if not s then
+			return
 		end
+		Lighting.Ambient = s.Ambient
+		Lighting.OutdoorAmbient = s.OutdoorAmbient
+		Lighting.Brightness = s.Brightness
+		Lighting.ExposureCompensation = s.ExposureCompensation
+		Lighting.GlobalShadows = s.GlobalShadows
+		World.saved = nil
+	end
 
-		World.followConn = RunService.RenderStepped:Connect(function()
-			local cam = workspace.CurrentCamera
-			local fold = World.folder
-			if not cam or not fold then
+	local function paintFullbright()
+		local b = math.clamp(World.brightness, 0.5, 8)
+		-- Flat ambient so night geometry actually lights up (not a post filter).
+		Lighting.Ambient = Color3.fromRGB(180, 180, 190)
+		Lighting.OutdoorAmbient = Color3.fromRGB(200, 200, 210)
+		Lighting.Brightness = b
+		Lighting.ExposureCompensation = math.clamp((b - 1) * 0.35, 0, 1.2)
+		Lighting.GlobalShadows = false
+	end
+
+	local function unbindFullbright()
+		if World.fbBound then
+			pcall(function()
+				RunService:UnbindFromRenderStep(FB_STEP)
+			end)
+			World.fbBound = false
+		end
+	end
+
+	local function bindFullbright()
+		if World.fbBound then
+			return
+		end
+		World.fbBound = true
+		-- After Heartbeat (where FustSky writes) so the rendered frame stays bright.
+		RunService:BindToRenderStep(FB_STEP, Enum.RenderPriority.Last.Value, function()
+			if not World.fullbrightOn then
 				return
 			end
-			if fold.Parent ~= cam then
-				fold.Parent = cam
-			end
-			local cf = cam.CFrame
-			for _, a in ipairs(World.anchors) do
-				a.part.CFrame = cf * CFrame.new(a.offset)
-			end
-		end)
-
-		World.camConn = workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
-			local cam = workspace.CurrentCamera
-			if cam and World.folder then
-				World.folder.Parent = cam
-			end
+			paintFullbright()
 		end)
 	end
 
 	function World:applyFullbright()
 		if not self.fullbrightOn then
-			destroyLights()
+			unbindFullbright()
+			restoreLighting()
 			return
 		end
-		ensureLights()
-		local b = math.clamp(self.brightness, 0.5, 40)
-		for _, a in ipairs(self.anchors) do
-			a.light.Brightness = b
-			a.light.Range = 120
-			a.light.Enabled = true
-		end
+		capture()
+		paintFullbright()
+		bindFullbright()
 	end
 
 	function World:applyTime()
@@ -127,6 +98,7 @@ return function(deps)
 			end
 			return
 		end
+		capture()
 		Lighting.ClockTime = self.clockTime
 		if not self.timeConn then
 			self.timeConn = RunService.Heartbeat:Connect(function()
@@ -145,8 +117,12 @@ return function(deps)
 	function World:destroy()
 		self.fullbrightOn = false
 		self.timeControlOn = false
-		self:applyTime()
-		destroyLights()
+		unbindFullbright()
+		if self.timeConn then
+			self.timeConn:Disconnect()
+			self.timeConn = nil
+		end
+		restoreLighting()
 	end
 
 	return World
