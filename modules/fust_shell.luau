@@ -115,7 +115,58 @@ return function(deps)
 
 	local aimTab = Window:Tab({ Name = "Aim", Icon = "crosshair", Description = "Camera-only (no hooks)" })
 	local aimWarn = aimTab:Section({ Name = "Read first", Icon = "alert-triangle", Side = "Left" })
-	aimWarn:Label("True silent aim (hooking GunControl / shoot remotes) is <b>not</b> included. Fust validates call stacks via debug.info. Snap-on-shot only nudges your camera on LMB inside a tight FOV.")
+	aimWarn:Label("No remote / GunControl hooks. <b>Silent</b> = extra camera snap on LMB. <b>Lock</b> = hold your key for hard tracking inside FOV.")
+
+	local lockSec = aimTab:Section({ Name = "Aim lock", Icon = "lock", Side = "Left" })
+	lockSec:Toggle({
+		Name = "Aim lock",
+		Description = "Allow hard lock while hold key is pressed",
+		Default = false,
+		Flag = "Fust_LockOn",
+		Callback = function(v)
+			Aim.lockEnabled = v
+			if not v then
+				Aim.lockHeld = false
+				Aim.lockedPt = nil
+			end
+			Aim:syncBind()
+		end,
+	})
+	lockSec:Toggle({
+		Name = "Hold lock key",
+		Description = "Right-click row to change key",
+		Default = false,
+		Flag = "Fust_LockHold",
+		Mode = "Hold",
+		Keybind = Enum.KeyCode.E,
+		Callback = function(v)
+			Aim.lockHeld = v
+		end,
+	})
+	lockSec:Slider({
+		Name = "Lock FOV",
+		Min = 2,
+		Max = 20,
+		Default = 8,
+		Increment = 0.5,
+		Suffix = "°",
+		Flag = "Fust_LockFov",
+		Callback = function(v)
+			Aim.lockFov = v
+			Aim.fovVisualDeg = v
+		end,
+	})
+	lockSec:Slider({
+		Name = "Lock speed",
+		Min = 0.2,
+		Max = 1,
+		Default = 0.55,
+		Increment = 0.05,
+		Flag = "Fust_LockStr",
+		Callback = function(v)
+			Aim.lockStrength = v
+		end,
+	})
 
 	local aimMain = aimTab:Section({ Name = "Aim assist", Icon = "target", Side = "Left" })
 	aimMain:Toggle({
@@ -224,6 +275,7 @@ return function(deps)
 	end)
 
 	Esp:ensureGui()
+	Aim:syncBind()
 
 	bundle.Window = Window
 	bundle.Esp = Esp
