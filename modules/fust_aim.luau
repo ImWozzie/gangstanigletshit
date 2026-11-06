@@ -24,7 +24,7 @@ return function(deps)
 		targetBones = { "Head" },
 		smoothing = 36,
 		weaponFovPx = 120,
-		maxDist = 450,
+		maxDist = 1500,
 		deadzonePx = 3,
 		visibleCheck = false,
 		ignoreKnocked = true,
@@ -42,7 +42,10 @@ return function(deps)
 		aimKey1Held = false,
 		aimKey2Held = false,
 		aimKey1 = Enum.KeyCode.B,
-		aimKey2 = nil,
+		aimKey2 = Enum.KeyCode.V,
+		triggerKey = Enum.KeyCode.B,
+		mouseRemX = 0,
+		mouseRemY = 0,
 		requireHoldKey = false,
 		lockCapDeg = 6.5,
 		battleMode = false,
@@ -109,20 +112,25 @@ return function(deps)
 		return self:isAds()
 	end
 
+	local function isBindDown(key)
+		if not key then
+			return false
+		end
+		if key.EnumType == Enum.UserInputType then
+			return UserInputService:IsMouseButtonPressed(key)
+		end
+		return UserInputService:IsKeyDown(key)
+	end
+
 	function Aim:aimKeysHeld()
 		if not self.requireHoldKey then
 			return true
 		end
-		local uis = UserInputService
-		local k1 = self.aimKey1Held
-		if not k1 and self.aimKey1 then
-			k1 = uis:IsKeyDown(self.aimKey1)
-		end
-		local k2 = self.aimKey2Held
-		if not k2 and self.aimKey2 then
-			k2 = uis:IsKeyDown(self.aimKey2)
-		end
-		return k1 or k2
+		return self.aimKey1Held or self.aimKey2Held or isBindDown(self.aimKey1) or isBindDown(self.aimKey2)
+	end
+
+	function Aim:triggerHeld()
+		return self.triggerKeyHeld or isBindDown(self.triggerKey)
 	end
 
 	function Aim:shouldRunAimbot()
@@ -188,12 +196,30 @@ return function(deps)
 			table.insert(ignore, LOCAL.Character)
 		end
 		params.FilterDescendantsInstances = ignore
-		local hit = workspace:Raycast(from, dir.Unit * dist, params)
-		if not hit then
-			return true
-		end
-		if char and hit.Instance and hit.Instance:IsDescendantOf(char) then
-			return true
+		local unit = dir.Unit
+		local origin = from
+		local remaining = dist
+		-- Foliage, glass and invisible parts block rays at range; step past them.
+		for _ = 1, 6 do
+			local hit = workspace:Raycast(origin, unit * remaining, params)
+			if not hit then
+				return true
+			end
+			local inst = hit.Instance
+			if char and inst:IsDescendantOf(char) then
+				return true
+			end
+			local seeThrough = inst:IsA("BasePart") and (inst.Transparency > 0.4 or not inst.CanCollide)
+			if not seeThrough then
+				return false
+			end
+			table.insert(ignore, inst)
+			params.FilterDescendantsInstances = ignore
+			remaining -= (hit.Position - origin).Magnitude
+			origin = hit.Position
+			if remaining <= 0.05 then
+				return true
+			end
 		end
 		return false
 	end
@@ -350,16 +376,31 @@ return function(deps)
 		if self.aimbotEnabled and self:aimKeysHeld() then
 			factor = math.clamp(factor * 2.5, 0.08, 0.55)
 		end
-		local mx = dx * factor
-		local my = dy * factor
+		-- Mouse deltas are whole pixels: carry the fraction between frames and
+		-- force at least 1px, otherwise small (far-target) offsets never move.
+		local mx = dx * factor + self.mouseRemX
+		local my = dy * factor + self.mouseRemY
+		local sx = mx >= 0 and math.floor(mx) or math.ceil(mx)
+		local sy = my >= 0 and math.floor(my) or math.ceil(my)
+		if sx == 0 and math.abs(dx) > self.deadzonePx * 0.5 then
+			sx = dx > 0 and 1 or -1
+		end
+		if sy == 0 and math.abs(dy) > self.deadzonePx * 0.5 then
+			sy = dy > 0 and 1 or -1
+		end
+		self.mouseRemX = math.clamp(mx - sx, -1, 1)
+		self.mouseRemY = math.clamp(my - sy, -1, 1)
+		if sx == 0 and sy == 0 then
+			return true
+		end
 		local moved = false
 		if type(mousemoverel) == "function" then
-			mousemoverel(mx, my)
+			mousemoverel(sx, sy)
 			moved = true
 		else
 			pcall(function()
 				local vim = game:GetService("VirtualInputManager")
-				vim:SendMouseMoveEvent(cx + mx, cy + my, game)
+				vim:SendMouseMoveEvent(cx + sx, cy + sy, game)
 				moved = true
 			end)
 		end
@@ -540,7 +581,7 @@ return function(deps)
 	end
 
 	function Aim:tryTriggerbot(cam, dt)
-		if not self.triggerEnabled or not self.triggerKeyHeld or not self:canAim() then
+		if not self.triggerEnabled or not self:triggerHeld() or not self:canAim() then
 			self.triggerAcc = 0
 			return
 		end
@@ -671,6 +712,8 @@ return function(deps)
 		self.stickyChar = nil
 		self.firingSilent = false
 		self.triggerAcc = 0
+		self.mouseRemX = 0
+		self.mouseRemY = 0
 	end
 
 	function Aim:destroy()

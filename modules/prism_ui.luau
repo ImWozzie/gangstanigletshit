@@ -2750,6 +2750,40 @@ local function element(row, title, overlayParent)
  return e
 end
 
+-- Binds are an Enum.KeyCode or a mouse-button Enum.UserInputType. Roblox
+-- does not report side buttons (MB4/MB5), so only MB1-MB3 can be bound.
+local MOUSE_BINDS = {
+ [Enum.UserInputType.MouseButton1] = "MB1",
+ [Enum.UserInputType.MouseButton2] = "MB2",
+ [Enum.UserInputType.MouseButton3] = "MB3",
+}
+
+local function resolveKey(key)
+ if typeof(key) ~= "string" then return key end
+ local ok, code = pcall(function() return Enum.KeyCode[key] end)
+ if ok and code then return code end
+ local okMouse, input = pcall(function() return Enum.UserInputType[key] end)
+ if okMouse and input and MOUSE_BINDS[input] then return input end
+ return nil
+end
+
+local function keyLabel(key)
+ if not key then return "None" end
+ return MOUSE_BINDS[key] or key.Name
+end
+
+local function inputKey(input)
+ if input.UserInputType == Enum.UserInputType.Keyboard then return input.KeyCode end
+ if MOUSE_BINDS[input.UserInputType] then return input.UserInputType end
+ return nil
+end
+
+local function inputMatches(input, key)
+ if not key then return false end
+ if MOUSE_BINDS[key] then return input.UserInputType == key end
+ return input.KeyCode == key
+end
+
 local function chip(props)
  local c = new("TextLabel", props)
  c.BackgroundColor3 = Theme.Input
@@ -3208,14 +3242,25 @@ function Section:Toggle(opts)
  local keyChip = chip(controlProps(UDim2.fromOffset(0, 16), nextX))
  keyChip.AutomaticSize = Enum.AutomaticSize.X
  keyChip.Visible = false
+ keyChip.ZIndex = 5
  keyChip.Parent = body
  padding(0, 0, 5, 5).Parent = keyChip
+ local keyChipButton = new("TextButton", {
+ Size = UDim2.fromScale(1, 1),
+ BackgroundTransparency = 1,
+ Text = "",
+ AutoButtonColor = false,
+ ZIndex = 6,
+ Parent = keyChip,
+ })
 
  local toggle = element(row, title, body)
  toggle.Value = false
  toggle.Key = nil
  toggle.Mode = opts.Mode or "Toggle"
  local listening = false
+ local lastBind = 0
+ local showChip = opts.Keybind ~= nil or opts.ShowKey == true
 
  -- Label takes whatever the controls on the right leave free.
  local function fitLabel()
@@ -3227,8 +3272,8 @@ function Section:Toggle(opts)
  end
 
  local function renderKey()
- keyChip.Visible = listening or toggle.Key ~= nil
- keyChip.Text = listening and "..." or (toggle.Key and toggle.Key.Name or "")
+ keyChip.Visible = listening or toggle.Key ~= nil or showChip
+ keyChip.Text = listening and "..." or keyLabel(toggle.Key)
  keyChip.TextColor3 = listening and Theme.Accent or Theme.SubText
  task.defer(fitLabel)
  end
@@ -3267,29 +3312,36 @@ function Section:Toggle(opts)
  end
  function toggle:Get() return self.Value end
  function toggle:SetKey(key, mode)
- if typeof(key) == "string" then key = Enum.KeyCode[key] end
+ key = resolveKey(key)
  self.Key = key
  if mode then self.Mode = mode end
  renderKey()
  window:_refreshKeybinds()
+ safeCall(opts.KeyChanged, key)
  end
 
  local hit = rowHitbox(self, row, body, opts.Description)
+ -- A mouse-button bind fires a click on release; ignore that click so it
+ -- does not flip the toggle or restart listening.
+ local function justBound() return os.clock() - lastBind < 0.35 end
  hit.MouseButton1Click:Connect(function()
- if toggle.Locked then return end
+ if toggle.Locked or listening or justBound() then return end
  toggle:Set(not toggle.Value)
  end)
- -- Only one element listens for a key at a time: right-clicking another
- -- toggle (or clicking a keybind) moves the listening state over to it.
+ -- Only one element listens for a key at a time: clicking the key chip
+ -- (or right-clicking the row) moves the listening state over to it.
  function toggle:_stopListening()
  listening = false
  renderKey()
  end
- hit.MouseButton2Click:Connect(function()
+ local function beginListening()
+ if justBound() then return end
  window:_claimListener(toggle)
  listening = true
  renderKey()
- end)
+ end
+ hit.MouseButton2Click:Connect(beginListening)
+ keyChipButton.MouseButton1Click:Connect(beginListening)
 
  if swatch then
  picker = buildPicker(self, row, swatch, opts.Color, function(color)
@@ -3312,22 +3364,26 @@ function Section:Toggle(opts)
 
  table.insert(window._conns, UserInputService.InputBegan:Connect(function(input, processed)
  if listening then
- if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+ local key = inputKey(input)
+ if not key then return end
  listening = false
+ lastBind = os.clock()
  window:_releaseListener(toggle)
- local clear = input.KeyCode == Enum.KeyCode.Escape or input.KeyCode == Enum.KeyCode.Backspace
+ local clear = key == Enum.KeyCode.Escape or key == Enum.KeyCode.Backspace
  local previous = toggle.Key
- toggle:SetKey(not clear and input.KeyCode or nil)
+ toggle:SetKey(not clear and key or nil)
  if not clear then
- window:_warnKeyConflict(toggle, input.KeyCode, function() toggle:SetKey(previous) end)
+ window:_warnKeyConflict(toggle, key, function() toggle:SetKey(previous) end)
  end
  return
  end
- if processed or not toggle.Key or input.KeyCode ~= toggle.Key or toggle.Locked then return end
+ if not toggle.Key or toggle.Locked or not inputMatches(input, toggle.Key) then return end
+ -- Games often sink mouse buttons (e.g. ADS on MB2), so mouse binds ignore processed.
+ if processed and not MOUSE_BINDS[toggle.Key] then return end
  if toggle.Mode == "Hold" then toggle:Set(true) else toggle:Set(not toggle.Value) end
  end))
  table.insert(window._conns, UserInputService.InputEnded:Connect(function(input)
- if toggle.Mode == "Hold" and toggle.Key and input.KeyCode == toggle.Key then toggle:Set(false) end
+ if toggle.Mode == "Hold" and inputMatches(input, toggle.Key) then toggle:Set(false) end
  end))
 
  -- Inline sub-settings: toggle:AddSettings() returns a Section that lives
@@ -4039,15 +4095,16 @@ function Section:Keybind(opts)
  rowHover(self, row, keyButton, opts.Description)
 
  local keybind = element(row, title, body)
- keybind.Value = opts.Default
+ keybind.Value = resolveKey(opts.Default)
  local listening = false
+ local lastBind = 0
 
  local function render()
- keyButton.Text = listening and "..." or (keybind.Value and keybind.Value.Name or "None")
+ keyButton.Text = listening and "..." or keyLabel(keybind.Value)
  keyButton.TextColor3 = listening and Theme.Accent or Theme.SubText
  end
  function keybind:Set(key, silent)
- if typeof(key) == "string" then key = Enum.KeyCode[key] end
+ key = resolveKey(key)
  self.Value = key
  render()
  if not silent then safeCall(opts.ChangedCallback, key) end
@@ -4060,6 +4117,7 @@ function Section:Keybind(opts)
  render()
  end
  keyButton.MouseButton1Click:Connect(function()
+ if os.clock() - lastBind < 0.35 then return end
  self.Window:_claimListener(keybind)
  listening = true
  tween(keyStroke, 0.15, { Color = Theme.Accent, Transparency = 0 })
@@ -4068,21 +4126,23 @@ function Section:Keybind(opts)
 
  table.insert(self.Window._conns, UserInputService.InputBegan:Connect(function(input, processed)
  if listening then
- if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+ local captured = inputKey(input)
+ if not captured then return end
  listening = false
+ lastBind = os.clock()
  self.Window:_releaseListener(keybind)
  tween(keyStroke, 0.15, { Color = Theme.Outline, Transparency = Theme.OutlineTransparency })
  local previous = keybind.Value
- local key = input.KeyCode ~= Enum.KeyCode.Escape and input.KeyCode or nil
+ local key = captured ~= Enum.KeyCode.Escape and captured or nil
  keybind:Set(key)
  if key then
  self.Window:_warnKeyConflict(keybind, key, function() keybind:Set(previous) end)
  end
  return
  end
- if not processed and keybind.Value and input.KeyCode == keybind.Value then
+ if not keybind.Value or not inputMatches(input, keybind.Value) then return end
+ if processed and not MOUSE_BINDS[keybind.Value] then return end
  safeCall(opts.Callback, keybind.Value)
- end
  end))
 
  render()
@@ -6558,7 +6618,7 @@ function Window:_refreshKeybinds()
  Position = UDim2.fromScale(1, 0),
  BackgroundTransparency = 1,
  FontFace = Fonts.Medium,
- Text = "[" .. t.Key.Name .. "]",
+ Text = "[" .. keyLabel(t.Key) .. "]",
  TextColor3 = Theme.SubText,
  TextSize = 11,
  TextXAlignment = Enum.TextXAlignment.Right,
@@ -6618,7 +6678,7 @@ local function applyFlags(data)
  if isKey then
  if el.SetKey then el:SetKey(v[1], v[2]) end
  elseif el.Set then
- if typeof(v) == "table" and v.__enum then v = Enum.KeyCode[v.__enum] end
+ if typeof(v) == "table" and v.__enum then v = resolveKey(v.__enum) end
  if typeof(v) == "table" and v.__color then v = Color3.fromHex(v.__color) end
  el:Set(v)
  end
@@ -9171,7 +9231,7 @@ function Window:_warnKeyConflict(owner, key, undo)
  table.insert(buttons, { Name = "Keep both" })
  Prism:Notify({
  Title = "Key conflict",
- Content = " " .. key.Name .. " is also bound to " .. table.concat(names, ", ") .. ".",
+ Content = " " .. keyLabel(key) .. " is also bound to " .. table.concat(names, ", ") .. ".",
  Type = "Warning",
  Duration = 10,
  Merge = false,
