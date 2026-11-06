@@ -1,16 +1,17 @@
 -- Fust ESP module (PlayerGui overlays). Returns factory(deps) -> Esp
+-- Frames only (no Drawing), nothing parented to other characters. One Heartbeat: a slow scan
+-- (targets + part cache) and a render pass at Esp.rate; frame properties are written only on change.
 return function(deps)
 	local Players = deps.Players
 	local RunService = deps.RunService
 	local LOCAL = deps.LocalPlayer
 
-	local MAX_TARGETS = 12
-	local TICK = 0.18
-	local SKEL_MAX_DIST = 400
-	local HP_MIN_DIST = 35
 	local OVERLAY_NAME = "FustBaseEsp"
+	local MAX_SLOTS = 20
+	local SCAN_TICK = 0.25
+	local HP_MIN_DIST = 35
 
-	local BONES_FULL = {
+	local R15_BONES = {
 		{ "Head", "UpperTorso" },
 		{ "UpperTorso", "LowerTorso" },
 		{ "UpperTorso", "LeftUpperArm" },
@@ -26,8 +27,7 @@ return function(deps)
 		{ "RightUpperLeg", "RightLowerLeg" },
 		{ "RightLowerLeg", "RightFoot" },
 	}
-
-	local BONES_LITE = {
+	local R15_LITE_BONES = {
 		{ "Head", "UpperTorso" },
 		{ "UpperTorso", "LowerTorso" },
 		{ "UpperTorso", "LeftHand" },
@@ -35,45 +35,505 @@ return function(deps)
 		{ "LowerTorso", "LeftFoot" },
 		{ "LowerTorso", "RightFoot" },
 	}
+	local R15_PARTS = {
+		"Head", "UpperTorso", "LowerTorso",
+		"LeftUpperArm", "LeftLowerArm", "LeftHand", "RightUpperArm", "RightLowerArm", "RightHand",
+		"LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "RightUpperLeg", "RightLowerLeg", "RightFoot",
+	}
 
-	local MAX_BONES = #BONES_FULL
-	local LINES_PER_TARGET = 4 + MAX_BONES
+	-- R6: single-part limbs, so joints come from each part's CFrame (shoulder / hip on top, hand / foot below)
+	local R6_POINTS = {
+		head = { "Head", Vector3.new(0, 0, 0) },
+		neck = { "Torso", Vector3.new(0, 1, 0) },
+		pelvis = { "Torso", Vector3.new(0, -1, 0) },
+		lShoulder = { "Left Arm", Vector3.new(0, 0.8, 0) },
+		lHand = { "Left Arm", Vector3.new(0, -1, 0) },
+		rShoulder = { "Right Arm", Vector3.new(0, 0.8, 0) },
+		rHand = { "Right Arm", Vector3.new(0, -1, 0) },
+		lHip = { "Left Leg", Vector3.new(0, 0.8, 0) },
+		lFoot = { "Left Leg", Vector3.new(0, -1, 0) },
+		rHip = { "Right Leg", Vector3.new(0, 0.8, 0) },
+		rFoot = { "Right Leg", Vector3.new(0, -1, 0) },
+	}
+	local R6_BONES = {
+		{ "head", "neck" }, { "neck", "pelvis" },
+		{ "neck", "lShoulder" }, { "lShoulder", "lHand" },
+		{ "neck", "rShoulder" }, { "rShoulder", "rHand" },
+		{ "pelvis", "lHip" }, { "lHip", "lFoot" },
+		{ "pelvis", "rHip" }, { "rHip", "rFoot" },
+	}
+	local R6_PARTS = { "Head", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg" }
+
+	local MAX_BONES = #R15_BONES
+	local MAX_JOINTS = 16
 
 	local Esp = {
 		master = false,
 		maxDist = 2500,
+		maxTargets = 12,
+		rate = 30,
 		box = true,
+		boxStyle = "Full",
+		outline = true,
 		skeleton = true,
+		joints = true,
+		skelDist = 400,
 		name = true,
 		distance = true,
 		healthBar = true,
 		healthBarMaxDist = 50,
 		healthText = false,
 		color = Color3.fromRGB(235, 235, 235),
+		thickness = 1.5,
 	}
 
 	local overlay
-	local linePool = {}
-	local textPool = {}
-	local barBgPool = {}
-	local barFillPool = {}
+	local slots = {}
+	local targets = {}
+	local partCache = setmetatable({}, { __mode = "k" })
 	local heartbeatConn
-	local acc = 0
-	local targetBuf = {}
-	local targetCount = 0
+	local scanAcc, renderAcc = 0, 0
+	local OUTLINE_COLOR = Color3.fromRGB(10, 10, 10)
+	local BAR_BG = Color3.fromRGB(18, 18, 18)
+	local HP_LOW = Color3.fromRGB(230, 70, 60)
+	local HP_HIGH = Color3.fromRGB(90, 210, 110)
+	local HEAD_UP = Vector3.new(0, 0.6, 0)
+	local FEET_DOWN = Vector3.new(0, 2.9, 0)
+
+	-- A pooled frame plus the last values written to it.
+	local function newRec(frame)
+		return { f = frame, vis = false }
+	end
+
+	local function setVis(r, v)
+		if r.vis ~= v then
+			r.vis = v
+			r.f.Visible = v
+		end
+	end
+
+	local function setColor(r, c)
+		if r.col ~= c then
+			r.col = c
+			r.f.BackgroundColor3 = c
+		end
+	end
+
+	local function setRect(r, x, y, w, h)
+		if r.x == nil or math.abs(r.x - x) > 0.3 or math.abs(r.y - y) > 0.3 then
+			r.x, r.y = x, y
+			r.f.Position = UDim2.fromOffset(x, y)
+		end
+		if r.w == nil or math.abs(r.w - w) > 0.3 or math.abs(r.h - h) > 0.3 then
+			r.w, r.h = w, h
+			r.f.Size = UDim2.fromOffset(w, h)
+		end
+	end
+
+	local function setRot(r, deg)
+		if r.rot == nil or math.abs(r.rot - deg) > 0.2 then
+			r.rot = deg
+			r.f.Rotation = deg
+		end
+	end
+
+	local function makeFrame(z, rounded)
+		local f = Instance.new("Frame")
+		f.AnchorPoint = Vector2.new(0.5, 0.5)
+		f.BorderSizePixel = 0
+		f.Visible = false
+		f.ZIndex = z
+		if rounded then
+			local c = Instance.new("UICorner")
+			c.CornerRadius = UDim.new(1, 0)
+			c.Parent = f
+		end
+		f.Parent = overlay
+		return newRec(f)
+	end
+
+	local function makeText()
+		local t = Instance.new("TextLabel")
+		t.AnchorPoint = Vector2.new(0.5, 1)
+		t.BackgroundTransparency = 1
+		t.TextStrokeTransparency = 0.35
+		t.TextStrokeColor3 = Color3.new(0, 0, 0)
+		t.Font = Enum.Font.GothamMedium
+		t.TextSize = 13
+		t.TextXAlignment = Enum.TextXAlignment.Center
+		t.TextYAlignment = Enum.TextYAlignment.Bottom
+		t.Visible = false
+		t.ZIndex = 6
+		t.Parent = overlay
+		return newRec(t)
+	end
+
+	-- Frames for one target, made the first time that slot is used.
+	local function getSlot(i)
+		local s = slots[i]
+		if s then
+			return s
+		end
+		s = { box = {}, boxOut = {}, bones = {}, boneOut = {}, joints = {}, pts = {}, jdone = {}, segs = {} }
+		for k = 1, 8 do
+			s.segs[k] = { 0, 0, 0, 0 }
+		end
+		for k = 1, 8 do
+			s.boxOut[k] = makeFrame(1)
+			s.box[k] = makeFrame(3)
+			s.boxOut[k].f.BackgroundTransparency = 0.45
+		end
+		for k = 1, MAX_BONES do
+			s.boneOut[k] = makeFrame(1)
+			s.boneOut[k].f.BackgroundTransparency = 0.55
+			s.bones[k] = makeFrame(3)
+		end
+		for k = 1, MAX_JOINTS do
+			s.joints[k] = makeFrame(4, true)
+		end
+		s.barBg = makeFrame(2)
+		s.barBg.f.AnchorPoint = Vector2.new(0, 0)
+		s.barBg.f.BackgroundTransparency = 0.25
+		s.barFill = makeFrame(3)
+		s.barFill.f.AnchorPoint = Vector2.new(0, 1)
+		s.label = makeText()
+		slots[i] = s
+		return s
+	end
+
+	local function hideList(list, from)
+		for k = from or 1, #list do
+			setVis(list[k], false)
+		end
+	end
+
+	local function hideSlot(s)
+		hideList(s.box)
+		hideList(s.boxOut)
+		hideList(s.bones)
+		hideList(s.boneOut)
+		hideList(s.joints)
+		setVis(s.barBg, false)
+		setVis(s.barFill, false)
+		setVis(s.label, false)
+	end
 
 	local function hideAll()
-		for _, f in ipairs(linePool) do
-			f.Visible = false
+		for _, s in pairs(slots) do
+			hideSlot(s)
 		end
-		for _, t in ipairs(textPool) do
-			t.Visible = false
+	end
+
+	-- Segment from a to b; stretched by `thick` so neighbouring segments overlap at the joints.
+	local function seg(r, ax, ay, bx, by, color, thick)
+		local dx, dy = bx - ax, by - ay
+		local len = math.sqrt(dx * dx + dy * dy)
+		if len < 1 then
+			setVis(r, false)
+			return
 		end
-		for _, f in ipairs(barBgPool) do
-			f.Visible = false
+		setColor(r, color)
+		setRect(r, (ax + bx) * 0.5, (ay + by) * 0.5, len + thick, thick)
+		setRot(r, math.deg(math.atan2(dy, dx)))
+		setVis(r, true)
+	end
+
+	local function dot(r, x, y, size, color)
+		setColor(r, color)
+		setRect(r, x, y, size, size)
+		setVis(r, true)
+	end
+
+	-- Parts for a character, looked up once and kept until one goes missing.
+	local function partsFor(char)
+		local c = partCache[char]
+		if c then
+			for _, p in pairs(c.parts) do
+				if not p.Parent then
+					c = nil
+					break
+				end
+			end
 		end
-		for _, f in ipairs(barFillPool) do
-			f.Visible = false
+		if c then
+			return c
+		end
+		local parts = {}
+		local r15 = char:FindFirstChild("UpperTorso") ~= nil
+		for _, n in ipairs(r15 and R15_PARTS or R6_PARTS) do
+			local p = char:FindFirstChild(n)
+			if p and p:IsA("BasePart") then
+				parts[n] = p
+			end
+		end
+		c = { parts = parts, r15 = r15, head = char:FindFirstChild("Head"), root = char:FindFirstChild("HumanoidRootPart") }
+		partCache[char] = c
+		return c
+	end
+
+	local function pickTargets(origin)
+		local list = {}
+		if not origin then
+			return list
+		end
+		local maxD2 = Esp.maxDist * Esp.maxDist
+		for _, plr in ipairs(Players:GetPlayers()) do
+			if plr ~= LOCAL then
+				local char = plr.Character
+				local hum = char and char:FindFirstChildOfClass("Humanoid")
+				local root = char and char:FindFirstChild("HumanoidRootPart")
+				if hum and root and hum.Health > 0 then
+					local d = root.Position - origin
+					local d2 = d.X * d.X + d.Y * d.Y + d.Z * d.Z
+					if d2 <= maxD2 then
+						list[#list + 1] = { plr = plr, char = char, hum = hum, d2 = d2 }
+					end
+				end
+			end
+		end
+		table.sort(list, function(a, b)
+			return a.d2 < b.d2
+		end)
+		for i = #list, math.min(Esp.maxTargets, MAX_SLOTS) + 1, -1 do
+			list[i] = nil
+		end
+		return list
+	end
+
+	local function shouldRun()
+		return Esp.master and (Esp.box or Esp.skeleton or Esp.name or Esp.distance or Esp.healthBar or Esp.healthText)
+	end
+
+	local function hpColor(pct)
+		return HP_LOW:Lerp(HP_HIGH, pct)
+	end
+
+	local function scan()
+		local myRoot = LOCAL.Character and LOCAL.Character:FindFirstChild("HumanoidRootPart")
+		targets = pickTargets(myRoot and myRoot.Position)
+		for _, t in ipairs(targets) do
+			t.cache = partsFor(t.char)
+			t.dist = math.sqrt(t.d2)
+		end
+	end
+
+	local function setSeg(q, ax, ay, bx, by)
+		q[1], q[2], q[3], q[4] = ax, ay, bx, by
+	end
+
+	local function drawBox(s, x0, y0, x1, y1, color, thick)
+		local q = s.segs
+		local n
+		if Esp.boxStyle == "Corners" then
+			local cw, ch = (x1 - x0) * 0.28, (y1 - y0) * 0.22
+			setSeg(q[1], x0, y0, x0 + cw, y0)
+			setSeg(q[2], x0, y0, x0, y0 + ch)
+			setSeg(q[3], x1, y0, x1 - cw, y0)
+			setSeg(q[4], x1, y0, x1, y0 + ch)
+			setSeg(q[5], x0, y1, x0 + cw, y1)
+			setSeg(q[6], x0, y1, x0, y1 - ch)
+			setSeg(q[7], x1, y1, x1 - cw, y1)
+			setSeg(q[8], x1, y1, x1, y1 - ch)
+			n = 8
+		else
+			setSeg(q[1], x0, y0, x1, y0)
+			setSeg(q[2], x1, y0, x1, y1)
+			setSeg(q[3], x1, y1, x0, y1)
+			setSeg(q[4], x0, y1, x0, y0)
+			n = 4
+		end
+		for k = 1, n do
+			local e = q[k]
+			seg(s.box[k], e[1], e[2], e[3], e[4], color, thick)
+			if Esp.outline then
+				seg(s.boxOut[k], e[1], e[2], e[3], e[4], OUTLINE_COLOR, thick + 2)
+			else
+				setVis(s.boxOut[k], false)
+			end
+		end
+		hideList(s.box, n + 1)
+		hideList(s.boxOut, n + 1)
+	end
+
+	-- Screen point for a skeleton key, projected once per render (false = behind the camera).
+	local function project(pts, camera, key, part, offset)
+		local v = pts[key]
+		if v ~= nil then
+			return v
+		end
+		if not part then
+			pts[key] = false
+			return false
+		end
+		local world = offset and part.CFrame:PointToWorldSpace(offset) or part.Position
+		local p = camera:WorldToViewportPoint(world)
+		v = p.Z > 0 and Vector2.new(p.X, p.Y) or false
+		pts[key] = v
+		return v
+	end
+
+	local function joint(s, key, v, size, color, state)
+		if s.jdone[key] or state.used >= MAX_JOINTS then
+			return
+		end
+		s.jdone[key] = true
+		state.used += 1
+		dot(s.joints[state.used], v.X, v.Y, size, color)
+	end
+
+	local jointState = { used = 0 }
+
+	local function drawSkeleton(s, t, camera, color, thick)
+		local c = t.cache
+		local pts = s.pts
+		table.clear(pts)
+		table.clear(s.jdone)
+		jointState.used = 0
+		local withJoints = Esp.joints and t.dist <= 180
+		local jsize = thick + 2
+		local n
+		local list
+		if c.r15 then
+			list = t.dist <= 180 and R15_BONES or R15_LITE_BONES
+		else
+			list = R6_BONES
+		end
+		n = #list
+		for k = 1, n do
+			local b = list[k]
+			local a, z
+			if c.r15 then
+				a = project(pts, camera, b[1], c.parts[b[1]])
+				z = project(pts, camera, b[2], c.parts[b[2]])
+			else
+				local da, db = R6_POINTS[b[1]], R6_POINTS[b[2]]
+				a = project(pts, camera, b[1], c.parts[da[1]], da[2])
+				z = project(pts, camera, b[2], c.parts[db[1]], db[2])
+			end
+			if a and z then
+				seg(s.bones[k], a.X, a.Y, z.X, z.Y, color, thick)
+				if Esp.outline then
+					seg(s.boneOut[k], a.X, a.Y, z.X, z.Y, OUTLINE_COLOR, thick + 2)
+				else
+					setVis(s.boneOut[k], false)
+				end
+				if withJoints then
+					joint(s, b[1], a, jsize, color, jointState)
+					joint(s, b[2], z, jsize, color, jointState)
+				end
+			else
+				setVis(s.bones[k], false)
+				setVis(s.boneOut[k], false)
+			end
+		end
+		hideList(s.bones, n + 1)
+		hideList(s.boneOut, n + 1)
+		hideList(s.joints, jointState.used + 1)
+	end
+
+	local function render()
+		local camera = workspace.CurrentCamera
+		if not camera then
+			return
+		end
+		local vp = camera.ViewportSize
+		local color = Esp.color
+		local used = 0
+		for i, t in ipairs(targets) do
+			local c = t.cache
+			local s = getSlot(i)
+			used = i
+			local head, root = c.head, c.root
+			local ok = head and root and head.Parent and root.Parent and t.hum.Health > 0
+			local top, bottom
+			if ok then
+				top = camera:WorldToViewportPoint(head.Position + HEAD_UP)
+				bottom = camera:WorldToViewportPoint(root.Position - FEET_DOWN)
+				ok = top.Z > 0 and bottom.Z > 0
+					and math.max(top.X, bottom.X) > -50 and math.min(top.X, bottom.X) < vp.X + 50
+					and math.max(top.Y, bottom.Y) > -50 and math.min(top.Y, bottom.Y) < vp.Y + 50
+			end
+			if not ok then
+				hideSlot(s)
+			else
+				local y0, y1 = math.min(top.Y, bottom.Y), math.max(top.Y, bottom.Y)
+				local h = math.max(y1 - y0, 14)
+				y1 = y0 + h
+				local cx = (top.X + bottom.X) * 0.5
+				local w = math.clamp(h * 0.5, 10, 240)
+				local x0, x1 = cx - w * 0.5, cx + w * 0.5
+				local thick = Esp.thickness * (t.dist < 120 and 1.35 or 1)
+
+				if Esp.box then
+					drawBox(s, x0, y0, x1, y1, color, thick)
+				else
+					hideList(s.box)
+					hideList(s.boxOut)
+				end
+
+				if Esp.skeleton and t.dist <= Esp.skelDist then
+					drawSkeleton(s, t, camera, color, thick)
+				else
+					hideList(s.bones)
+					hideList(s.boneOut)
+					hideList(s.joints)
+				end
+
+				local hp = t.hum.Health / math.max(t.hum.MaxHealth, 1)
+				hp = math.clamp(hp, 0, 1)
+				if Esp.healthBar and t.dist >= HP_MIN_DIST and t.dist <= Esp.healthBarMaxDist and h >= 12 then
+					local barW = 3
+					local bx = x0 - barW - 5
+					setColor(s.barBg, BAR_BG)
+					setRect(s.barBg, bx - 1, y0 - 1, barW + 2, h + 2)
+					setVis(s.barBg, true)
+					setColor(s.barFill, hpColor(hp))
+					setRect(s.barFill, bx, y1, barW, math.max(h * hp, 1))
+					setVis(s.barFill, true)
+				else
+					setVis(s.barBg, false)
+					setVis(s.barFill, false)
+				end
+
+				if Esp.name or Esp.distance or Esp.healthText then
+					local key = (Esp.name and t.plr.DisplayName or "") .. "|"
+						.. (Esp.distance and math.floor(t.dist + 0.5) or "") .. "|"
+						.. (Esp.healthText and math.floor(t.hum.Health + 0.5) or "")
+					local lab = s.label
+					if lab.key ~= key then
+						lab.key = key
+						local chunks = {}
+						if Esp.name then
+							chunks[#chunks + 1] = t.plr.DisplayName
+						end
+						if Esp.distance then
+							chunks[#chunks + 1] = string.format("%dm", math.floor(t.dist + 0.5))
+						end
+						if Esp.healthText then
+							chunks[#chunks + 1] = string.format("%.0f/%.0f", t.hum.Health, t.hum.MaxHealth)
+						end
+						lab.f.Text = table.concat(chunks, "  ·  ")
+					end
+					if lab.col ~= color then
+						lab.col = color
+						lab.f.TextColor3 = color
+					end
+					local size = t.dist > 600 and 12 or 13
+					if lab.ts ~= size then
+						lab.ts = size
+						lab.f.TextSize = size
+					end
+					setRect(lab, cx, y0 - 4, 220, 16)
+					setVis(lab, true)
+				else
+					setVis(s.label, false)
+				end
+			end
+		end
+		for i = used + 1, MAX_SLOTS do
+			if slots[i] then
+				hideSlot(slots[i])
+			end
 		end
 	end
 
@@ -84,17 +544,28 @@ return function(deps)
 		end
 	end
 
-	local function destroyOverlay()
-		stopLoop()
-		hideAll()
-		if overlay then
-			overlay:Destroy()
-			overlay = nil
+	function Esp:bootLoop()
+		if heartbeatConn then
+			return
 		end
-		table.clear(linePool)
-		table.clear(textPool)
-		table.clear(barBgPool)
-		table.clear(barFillPool)
+		scanAcc, renderAcc = SCAN_TICK, 1
+		heartbeatConn = RunService.Heartbeat:Connect(function(dt)
+			if not shouldRun() then
+				hideAll()
+				stopLoop()
+				return
+			end
+			scanAcc += dt
+			renderAcc += dt
+			if scanAcc >= SCAN_TICK then
+				scanAcc = 0
+				scan()
+			end
+			if renderAcc >= 1 / math.clamp(Esp.rate, 5, 240) then
+				renderAcc = 0
+				render()
+			end
+		end)
 	end
 
 	local function cleanupOverlayGui()
@@ -109,299 +580,14 @@ return function(deps)
 		end
 	end
 
-	local function makeLine(parent)
-		local f = Instance.new("Frame")
-		f.AnchorPoint = Vector2.new(0.5, 0.5)
-		f.BorderSizePixel = 0
-		f.BackgroundTransparency = 0.15
-		f.Visible = false
-		f.ZIndex = 2
-		f.Parent = parent
-		return f
-	end
-
-	local function makeText(parent)
-		local t = Instance.new("TextLabel")
-		t.BackgroundTransparency = 1
-		t.TextStrokeTransparency = 0.45
-		t.Font = Enum.Font.GothamMedium
-		t.TextSize = 13
-		t.TextXAlignment = Enum.TextXAlignment.Center
-		t.Visible = false
-		t.ZIndex = 3
-		t.Parent = parent
-		return t
-	end
-
-	local function makeBar(parent, z)
-		local f = Instance.new("Frame")
-		f.BorderSizePixel = 0
-		f.Visible = false
-		f.ZIndex = z
-		f.Parent = parent
-		return f
-	end
-
-	local function drawSeg(frame, a, b, color, thickness)
-		local dir = b - a
-		local dist = dir.Magnitude
-		if dist < 1.5 then
-			frame.Visible = false
-			return
+	local function destroyOverlay()
+		stopLoop()
+		if overlay then
+			overlay:Destroy()
+			overlay = nil
 		end
-		frame.BackgroundColor3 = color
-		frame.Visible = true
-		frame.Size = UDim2.fromOffset(dist, thickness or 1)
-		frame.Position = UDim2.fromOffset((a.X + b.X) * 0.5, (a.Y + b.Y) * 0.5)
-		frame.Rotation = math.deg(math.atan2(dir.Y, dir.X))
-	end
-
-	local function partPos(char, name)
-		local p = char:FindFirstChild(name)
-		if p and p:IsA("BasePart") then
-			return p.Position
-		end
-		return nil
-	end
-
-	local function screenBox(char, camera)
-		local head = char:FindFirstChild("Head")
-		local root = char:FindFirstChild("HumanoidRootPart")
-		if not head or not root then
-			return nil
-		end
-		local top = camera:WorldToViewportPoint(head.Position + Vector3.new(0, 0.45, 0))
-		local bottom = camera:WorldToViewportPoint(root.Position - Vector3.new(0, 2.8, 0))
-		if top.Z <= 0 and bottom.Z <= 0 then
-			return nil
-		end
-		local minY = math.min(top.Y, bottom.Y)
-		local maxY = math.max(top.Y, bottom.Y)
-		local height = math.max(maxY - minY, 14)
-		local centerX = (top.X + bottom.X) * 0.5
-		local width = math.clamp(height * 0.42, 10, 220)
-		local minX = centerX - width * 0.5
-		local maxX = centerX + width * 0.5
-		return minX, minY, maxX, maxY, height
-	end
-
-	local function skipBoneLines(pool, fromIdx, count)
-		for i = fromIdx, fromIdx + count - 1 do
-			pool[i].Visible = false
-		end
-		return fromIdx + count
-	end
-
-	local function drawSkeleton(char, camera, color, pool, startIdx, boneList, thickness)
-		local idx = startIdx
-		for _, pair in ipairs(boneList) do
-			local frame = pool[idx]
-			idx += 1
-			local pa = partPos(char, pair[1])
-			local pb = partPos(char, pair[2])
-			if not pa or not pb then
-				frame.Visible = false
-			else
-				local sa = camera:WorldToViewportPoint(pa)
-				local sb = camera:WorldToViewportPoint(pb)
-				if sa.Z <= 0 or sb.Z <= 0 then
-					frame.Visible = false
-				else
-					drawSeg(frame, Vector2.new(sa.X, sa.Y), Vector2.new(sb.X, sb.Y), color, thickness)
-				end
-			end
-		end
-		for i = idx, startIdx + MAX_BONES - 1 do
-			pool[i].Visible = false
-		end
-		return startIdx + MAX_BONES
-	end
-
-	local function pickTargets(origin, maxDist)
-		targetCount = 0
-		if not origin then
-			return 0
-		end
-		local maxD2 = maxDist * maxDist
-		for _, plr in ipairs(Players:GetPlayers()) do
-			if plr ~= LOCAL then
-				local char = plr.Character
-				local hum = char and char:FindFirstChildOfClass("Humanoid")
-				local root = char and char:FindFirstChild("HumanoidRootPart")
-				if hum and root and hum.Health > 0 then
-					local delta = root.Position - origin
-					local d2 = delta.X * delta.X + delta.Y * delta.Y + delta.Z * delta.Z
-					if d2 <= maxD2 then
-						targetCount += 1
-						local slot = targetBuf[targetCount]
-						if not slot then
-							slot = {}
-							targetBuf[targetCount] = slot
-						end
-						slot.plr = plr
-						slot.dist = math.sqrt(d2)
-						slot.hum = hum
-						slot.char = char
-					end
-				end
-			end
-		end
-		if targetCount > 1 then
-			table.sort(targetBuf, function(a, b)
-				return a.dist < b.dist
-			end)
-		end
-		if targetCount > MAX_TARGETS then
-			targetCount = MAX_TARGETS
-		end
-		return targetCount
-	end
-
-	local function shouldShowHealth(dist, boxHeightPx)
-		if not Esp.healthBar then
-			return false
-		end
-		if dist < HP_MIN_DIST or dist > Esp.healthBarMaxDist then
-			return false
-		end
-		if boxHeightPx and boxHeightPx < 12 then
-			return false
-		end
-		return true
-	end
-
-	local function shouldRun()
-		if not Esp.master then
-			return false
-		end
-		return Esp.box or Esp.skeleton or Esp.name or Esp.distance or Esp.healthBar or Esp.healthText
-	end
-
-	function Esp:bootLoop()
-		if heartbeatConn then
-			return
-		end
-		acc = 0
-		heartbeatConn = RunService.Heartbeat:Connect(function(dt)
-			if not shouldRun() then
-				hideAll()
-				stopLoop()
-				return
-			end
-			acc += dt
-			if acc < TICK then
-				return
-			end
-			acc = 0
-
-			local camera = workspace.CurrentCamera
-			if not camera then
-				return
-			end
-
-			local myRoot = LOCAL.Character and LOCAL.Character:FindFirstChild("HumanoidRootPart")
-			local origin = myRoot and myRoot.Position
-			local limit = pickTargets(origin, Esp.maxDist)
-
-			local lineIdx = 1
-			local textIdx = 1
-			local barIdx = 1
-			local lineThick = 1
-
-			for ti = 1, limit do
-				local entry = targetBuf[ti]
-				local char = entry.char
-				local minX, minY, maxX, maxY, boxH = screenBox(char, camera)
-				local dist = entry.dist
-
-				if dist < 120 then
-					lineThick = 2
-				else
-					lineThick = 1
-				end
-
-				if Esp.box and minX then
-					local tl = Vector2.new(minX, minY)
-					local tr = Vector2.new(maxX, minY)
-					local bl = Vector2.new(minX, maxY)
-					local br = Vector2.new(maxX, maxY)
-					drawSeg(linePool[lineIdx], tl, tr, Esp.color, lineThick)
-					lineIdx += 1
-					drawSeg(linePool[lineIdx], tr, br, Esp.color, lineThick)
-					lineIdx += 1
-					drawSeg(linePool[lineIdx], br, bl, Esp.color, lineThick)
-					lineIdx += 1
-					drawSeg(linePool[lineIdx], bl, tl, Esp.color, lineThick)
-					lineIdx += 1
-				else
-					lineIdx = skipBoneLines(linePool, lineIdx, 4)
-				end
-
-				if Esp.skeleton and dist <= SKEL_MAX_DIST then
-					local bones = dist <= 180 and BONES_FULL or BONES_LITE
-					lineIdx = drawSkeleton(char, camera, Esp.color, linePool, lineIdx, bones, lineThick)
-				else
-					lineIdx = skipBoneLines(linePool, lineIdx, MAX_BONES)
-				end
-
-				if minX and shouldShowHealth(dist, boxH or (maxY - minY)) then
-					local bg = barBgPool[barIdx]
-					local fill = barFillPool[barIdx]
-					barIdx += 1
-					local h = maxY - minY
-					local barH = math.clamp(h * 0.85, 36, 72)
-					local barW = 3
-					local x = minX - 12
-					local y = minY + (h - barH) * 0.5
-					local pct = math.clamp(entry.hum.Health / math.max(entry.hum.MaxHealth, 1), 0, 1)
-					bg.Visible = true
-					bg.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-					bg.BackgroundTransparency = 0.35
-					bg.Position = UDim2.fromOffset(x, y)
-					bg.Size = UDim2.fromOffset(barW, barH)
-					fill.Visible = true
-					fill.BackgroundColor3 = Color3.fromRGB(90, 210, 110)
-					fill.BackgroundTransparency = 0.1
-					fill.AnchorPoint = Vector2.new(0, 1)
-					fill.Position = UDim2.fromOffset(x, y + barH)
-					fill.Size = UDim2.fromOffset(barW, barH * pct)
-				end
-
-				local label = textPool[textIdx]
-				textIdx += 1
-				if minX and (Esp.name or Esp.distance or Esp.healthText) then
-					local chunks = {}
-					if Esp.name then
-						table.insert(chunks, entry.plr.DisplayName)
-					end
-					if Esp.distance and origin then
-						table.insert(chunks, string.format("%dm", math.floor(dist + 0.5)))
-					end
-					if Esp.healthText then
-						table.insert(chunks, string.format("%.0f/%.0f", entry.hum.Health, entry.hum.MaxHealth))
-					end
-					label.Text = table.concat(chunks, " · ")
-					label.TextColor3 = Esp.color
-					label.Visible = true
-					label.TextSize = dist > 600 and 12 or 13
-					label.Position = UDim2.fromOffset((minX + maxX) * 0.5, minY - 18)
-					label.Size = UDim2.fromOffset(math.max(90, (maxX - minX) + 10), 16)
-				else
-					label.Visible = false
-				end
-			end
-
-			for i = lineIdx, #linePool do
-				linePool[i].Visible = false
-			end
-			for i = textIdx, #textPool do
-				textPool[i].Visible = false
-			end
-			for i = barIdx, #barBgPool do
-				barBgPool[i].Visible = false
-				barFillPool[i].Visible = false
-			end
-		end)
+		table.clear(slots)
+		targets = {}
 	end
 
 	function Esp:ensureGui()
@@ -411,7 +597,6 @@ return function(deps)
 		end
 		cleanupOverlayGui()
 		destroyOverlay()
-
 		overlay = Instance.new("ScreenGui")
 		overlay.Name = OVERLAY_NAME
 		overlay.ResetOnSpawn = false
@@ -420,42 +605,31 @@ return function(deps)
 		overlay.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 		overlay:SetAttribute("FustBaseEsp", true)
 		overlay.Parent = LOCAL:WaitForChild("PlayerGui")
-
-		local totalLines = MAX_TARGETS * LINES_PER_TARGET
-		for i = 1, totalLines do
-			linePool[i] = makeLine(overlay)
-		end
-		for i = 1, MAX_TARGETS do
-			textPool[i] = makeText(overlay)
-			barBgPool[i] = makeBar(overlay, 1)
-			barFillPool[i] = makeBar(overlay, 2)
-		end
-
-		overlay.Destroying:Connect(function()
-			stopLoop()
-		end)
-
+		overlay.Destroying:Connect(stopLoop)
 		self:bootLoop()
 	end
 
 	function Esp:setMaster(on)
 		self.master = on
-		self:ensureGui()
-		if not on then
+		if on then
+			self:ensureGui()
+		else
 			hideAll()
 		end
 	end
 
 	function Esp:destroy()
 		self.master = false
-		stopLoop()
 		destroyOverlay()
 		cleanupOverlayGui()
 	end
 
+
 	function Esp:cleanupBeforeLoad()
 		cleanupOverlayGui()
 	end
+
+	Esp.MAX_SLOTS = MAX_SLOTS
 
 	return Esp
 end
