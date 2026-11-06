@@ -7,6 +7,8 @@
   Re-run to refresh all modules from GitHub. Update only esp/aim/shell/prism on GitHub independently.
 ]]
 
+local BUNDLE_VERSION = "2.1.0"
+
 local MANIFEST_URL = "https://raw.githubusercontent.com/ImWozzie/gangstanigletshit/main/manifest.luau"
 
 local DEFAULT_MANIFEST = {
@@ -79,6 +81,7 @@ local deps = {
 	RunService = RunService,
 	UserInputService = UserInputService,
 	LocalPlayer = Players.LocalPlayer,
+	BundleVersion = BUNDLE_VERSION,
 }
 
 local prismExport = loadModule(repo, branch, paths.prism, "prism")
@@ -106,5 +109,8 @@ env.__FustEsp = Esp
 env.__FustAim = Aim
 env.__FustBundle = bundle
 env.__FustManifest = manifest
+env.__FustBundleVersion = BUNDLE_VERSION
+
+print("[FustBundle] loaded aimbot " .. BUNDLE_VERSION .. " (GitHub " .. branch .. ")")
 
 return bundle

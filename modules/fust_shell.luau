@@ -1,8 +1,9 @@
--- Prism menu shell: ESP + Aim tabs. Returns factory(deps) -> bundle
+-- Prism menu shell: ESP + Aimbot tabs. Returns factory(deps) -> bundle
 return function(deps)
 	local Prism = deps.Prism
 	local Esp = deps.Esp
 	local Aim = deps.Aim
+	local bundleVersion = deps.BundleVersion or "2.1.0"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false
@@ -13,11 +14,12 @@ return function(deps)
 	Esp:cleanupBeforeLoad()
 
 	local Window = Prism:CreateWindow({
-		Title = "Fust",
-		Subtitle = "visuals + aim",
+		Title = "Fust Hub",
+		Subtitle = "esp + aimbot v2",
+		Footer = bundleVersion,
 		Intro = false,
 		ToggleKey = Enum.KeyCode.RightControl,
-		Size = Vector2.new(580, 520),
+		Size = Vector2.new(600, 580),
 	})
 
 	local espTab = Window:Tab({ Name = "ESP", Icon = "eye", Description = "Player overlays" })
@@ -113,14 +115,86 @@ return function(deps)
 		end,
 	})
 
-	local aimTab = Window:Tab({ Name = "Aim", Icon = "crosshair", Description = "Camera-only (no hooks)" })
-	local aimWarn = aimTab:Section({ Name = "Read first", Icon = "alert-triangle", Side = "Left" })
-	aimWarn:Label("No remote / GunControl hooks. <b>Silent</b> = extra camera snap on LMB. <b>Lock</b> = hold your key for hard tracking inside FOV.")
+	local aimTab = Window:Tab({ Name = "Aimbot", Icon = "crosshair", Description = "Lock · silent · crosshair" })
+	local aimWarn = aimTab:Section({ Name = "Info", Icon = "info", Side = "Left" })
+	aimWarn:Label(string.format("Loaded <b>aimbot %s</b>. Crosshair shows without ADS. Turn on <b>Visual check</b> for on-screen status.", bundleVersion))
 
-	local lockSec = aimTab:Section({ Name = "Aim lock", Icon = "lock", Side = "Left" })
+	local visSec = aimTab:Section({ Name = "Crosshair & FOV", Icon = "scan", Side = "Right" })
+	visSec:Toggle({
+		Name = "Visual check",
+		Description = "Top HUD: ADS, lock state, target in FOV",
+		Default = false,
+		Flag = "Fust_VisualCheck",
+		Callback = function(v)
+			Aim.visualCheck = v
+			Aim:syncBind()
+		end,
+	})
+	visSec:Toggle({
+		Name = "Crosshair",
+		Default = true,
+		Flag = "Fust_CrossOn",
+		Callback = function(v)
+			Aim.showCrosshair = v
+			Aim:syncBind()
+		end,
+	})
+	visSec:Toggle({
+		Name = "FOV circle",
+		Default = true,
+		Flag = "Fust_FovRing",
+		Callback = function(v)
+			Aim.showFov = v
+			Aim:syncBind()
+		end,
+	})
+	visSec:Slider({
+		Name = "FOV circle size",
+		Description = "Visual ring (degrees)",
+		Min = 2,
+		Max = 25,
+		Default = 8,
+		Increment = 0.5,
+		Suffix = "°",
+		Flag = "Fust_FovVis",
+		Callback = function(v)
+			Aim.fovVisualDeg = v
+		end,
+	})
+	visSec:Slider({
+		Name = "Cross size",
+		Min = 6,
+		Max = 22,
+		Default = 10,
+		Increment = 1,
+		Flag = "Fust_CrossSize",
+		Callback = function(v)
+			Aim.crossSize = v
+			Aim:destroyCrosshair()
+			if Aim.showCrosshair or Aim.showFov or Aim.visualCheck then
+				Aim:ensureCrosshair()
+			end
+		end,
+	})
+	visSec:ColorPicker({
+		Name = "Crosshair colour",
+		Default = Color3.fromRGB(240, 240, 245),
+		Flag = "Fust_CrossCol",
+		Callback = function(c)
+			Aim.crossColor = c
+			Aim.fovRingColor = c
+			Aim:destroyCrosshair()
+			if Aim.showCrosshair or Aim.showFov or Aim.visualCheck then
+				Aim:ensureCrosshair()
+				Aim:syncBind()
+			end
+		end,
+	})
+
+	local lockSec = aimTab:Section({ Name = "Hold lock", Icon = "lock", Side = "Left" })
 	lockSec:Toggle({
-		Name = "Aim lock",
-		Description = "Allow hard lock while hold key is pressed",
+		Name = "Enable aimbot lock",
+		Description = "Must be on — then hold your key to track",
 		Default = false,
 		Flag = "Fust_LockOn",
 		Callback = function(v)
@@ -133,8 +207,8 @@ return function(deps)
 		end,
 	})
 	lockSec:Toggle({
-		Name = "Hold lock key",
-		Description = "Right-click row to change key",
+		Name = "Lock key (hold)",
+		Description = "Right-click row to change key (default E)",
 		Default = false,
 		Flag = "Fust_LockHold",
 		Mode = "Hold",
@@ -203,7 +277,7 @@ return function(deps)
 		end,
 	})
 
-	local snapSec = aimTab:Section({ Name = "Silent / snap", Icon = "zap", Side = "Left" })
+	local snapSec = aimTab:Section({ Name = "Silent aim", Icon = "zap", Side = "Left" })
 	snapSec:Toggle({
 		Name = "Silent (camera)",
 		Description = "Stronger snap on LMB inside silent FOV — not bullet redirect",
@@ -261,63 +335,6 @@ return function(deps)
 		end,
 	})
 
-	local visSec = aimTab:Section({ Name = "Crosshair & FOV", Icon = "scan", Side = "Right" })
-	visSec:Toggle({
-		Name = "Crosshair",
-		Default = true,
-		Flag = "Fust_CrossOn",
-		Callback = function(v)
-			Aim.showCrosshair = v
-			Aim:syncBind()
-		end,
-	})
-	visSec:Toggle({
-		Name = "FOV circle",
-		Default = true,
-		Flag = "Fust_FovRing",
-		Callback = function(v)
-			Aim.showFov = v
-			Aim:syncBind()
-		end,
-	})
-	visSec:Slider({
-		Name = "FOV circle size",
-		Description = "Visual ring (degrees)",
-		Min = 2,
-		Max = 25,
-		Default = 8,
-		Increment = 0.5,
-		Suffix = "°",
-		Flag = "Fust_FovVis",
-		Callback = function(v)
-			Aim.fovVisualDeg = v
-		end,
-	})
-	visSec:Slider({
-		Name = "Cross size",
-		Min = 6,
-		Max = 22,
-		Default = 10,
-		Increment = 1,
-		Flag = "Fust_CrossSize",
-		Callback = function(v)
-			Aim.crossSize = v
-			Aim:destroyCrosshair()
-			if Aim.showCrosshair or Aim.showFov then
-				Aim:ensureCrosshair()
-			end
-		end,
-	})
-	visSec:ColorPicker({
-		Name = "Crosshair colour",
-		Default = Color3.fromRGB(240, 240, 245),
-		Flag = "Fust_CrossCol",
-		Callback = function(c)
-			Aim.crossColor = c
-			Aim.fovRingColor = c
-		end,
-	})
-
 	local aimTune = aimTab:Section({ Name = "Targeting", Icon = "settings", Side = "Right" })
 	aimTune:Toggle({
 		Name = "Require ADS",
@@ -351,6 +368,21 @@ return function(deps)
 	})
 
 	local sysSec = espTab:Section({ Name = "Script", Icon = "power", Side = "Right" })
+	sysSec:Label("Version: " .. bundleVersion .. " — use Refresh if Aimbot tab looks old")
+	sysSec:Button({
+		Name = "Refresh from GitHub",
+		Description = "Re-download all modules",
+		Icon = "refresh-cw",
+		Callback = function()
+			local url = "https://raw.githubusercontent.com/ImWozzie/gangstanigletshit/main/loader/bootstrap.luau"
+			local ok, err = pcall(function()
+				loadstring(game:HttpGet(url))()
+			end)
+			if not ok then
+				warn("[FustBundle] refresh failed: " .. tostring(err))
+			end
+		end,
+	})
 	sysSec:Button({
 		Name = "Unload",
 		Description = "Removes UI + ESP + aim",

@@ -36,6 +36,7 @@ return function(deps)
 		crossColor = Color3.fromRGB(240, 240, 245),
 		fovRingColor = Color3.fromRGB(240, 240, 245),
 		fovVisualDeg = 8,
+		visualCheck = false,
 		bound = false,
 		inputBeganConn = nil,
 		inputEndedConn = nil,
@@ -46,6 +47,7 @@ return function(deps)
 	local crossGui
 	local crossParts = {}
 	local fovRing = {}
+	local statusLabel
 
 	local function isActive()
 		return Aim.lockEnabled
@@ -54,6 +56,7 @@ return function(deps)
 			or Aim.silentOn
 			or Aim.showCrosshair
 			or Aim.showFov
+			or Aim.visualCheck
 	end
 
 	function Aim:isAds()
@@ -154,6 +157,7 @@ return function(deps)
 		end
 		table.clear(crossParts)
 		table.clear(fovRing)
+		statusLabel = nil
 	end
 
 	function Aim:ensureCrosshair()
@@ -211,6 +215,20 @@ return function(deps)
 			seg.Parent = crossGui
 			fovRing[i] = seg
 		end
+
+		statusLabel = Instance.new("TextLabel")
+		statusLabel.Name = "VisualCheck"
+		statusLabel.BackgroundTransparency = 1
+		statusLabel.Font = Enum.Font.GothamMedium
+		statusLabel.TextSize = 13
+		statusLabel.TextColor3 = Color3.fromRGB(200, 255, 200)
+		statusLabel.TextXAlignment = Enum.TextXAlignment.Center
+		statusLabel.AnchorPoint = Vector2.new(0.5, 0)
+		statusLabel.Position = UDim2.new(0.5, 0, 0, 8)
+		statusLabel.Size = UDim2.new(1, -24, 0, 40)
+		statusLabel.TextWrapped = true
+		statusLabel.Visible = false
+		statusLabel.Parent = crossGui
 	end
 
 	function Aim:updateVisuals(cam)
@@ -222,13 +240,15 @@ return function(deps)
 			end
 		end
 
-		local showCross = self.showCrosshair and (self:canAim() or not self.requireAds)
+		local showCross = self.showCrosshair
 		for _, p in ipairs(crossParts) do
-			p.Visible = showCross
-			p.BackgroundColor3 = self.crossColor
+			if p.Name ~= "VisualCheck" then
+				p.Visible = showCross
+				p.BackgroundColor3 = self.crossColor
+			end
 		end
 
-		local showRing = self.showFov and showCross
+		local showRing = self.showFov
 		local radius = self:fovRadiusPx(cam, self.fovVisualDeg)
 		local cx, cy = cam.ViewportSize.X * 0.5, cam.ViewportSize.Y * 0.5
 		for i = 1, FOV_SEGMENTS do
@@ -244,6 +264,33 @@ return function(deps)
 				else
 					seg.Visible = false
 				end
+			end
+		end
+
+		if statusLabel then
+			if self.visualCheck then
+				local ads = self:isAds()
+				local can = self:canAim()
+				local pt = self:pickTarget(cam, self.lockFov, self.lockedPt)
+				local lockLine = self.lockEnabled and (self.lockHeld and "LOCK ON" or "lock: hold key") or "lock: off"
+				statusLabel.Visible = true
+				statusLabel.Text = string.format(
+					"AIMBOT v2 · ADS:%s · %s · target:%s · cross:%s fov:%s",
+					ads and "yes" or "no",
+					lockLine,
+					pt and "yes" or "no",
+					self.showCrosshair and "on" or "off",
+					self.showFov and "on" or "off"
+				)
+				if self.lockHeld and pt then
+					statusLabel.TextColor3 = Color3.fromRGB(120, 255, 160)
+				elseif not can and self.requireAds then
+					statusLabel.TextColor3 = Color3.fromRGB(255, 200, 120)
+				else
+					statusLabel.TextColor3 = Color3.fromRGB(200, 220, 255)
+				end
+			else
+				statusLabel.Visible = false
 			end
 		end
 	end
