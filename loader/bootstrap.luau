@@ -7,7 +7,7 @@
   Re-run to refresh all modules from GitHub. Update only esp/aim/shell/prism on GitHub independently.
 ]]
 
-local BUNDLE_VERSION = "2.2.0"
+local BUNDLE_VERSION = "2.2.1"
 
 local MANIFEST_URL = "https://raw.githubusercontent.com/ImWozzie/gangstanigletshit/main/manifest.luau"
 
@@ -53,7 +53,7 @@ local function loadChunk(source, label)
 end
 
 local function loadModule(repo, branch, path, label)
-	local url = rawUrl(repo, branch, path)
+	local url = rawUrl(repo, branch, path) .. "?v=" .. BUNDLE_VERSION
 	local body = httpGet(url)
 	if not body then
 		error("[FustBundle] HttpGet failed: " .. url)
