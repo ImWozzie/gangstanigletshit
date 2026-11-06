@@ -168,7 +168,13 @@ Readable detection that matches “instant look”:
 
 ---
 
-## 6. Rules for agents running anything in-game
+## 6. Third-party Vault dump (2026-11-06)
+
+Live `getgenv().vaultFust` reverse while farmAura was on — full write-up in **`vault_steal.md`**. Luraph-obfuscated; no function source. Key takeaway: farmAura fires **legit `FustGather` → Swing** (not executor FireServer). Do not port aim-weakspot farm / silent / gunmods. World ESP toggle list + inv/target viewers are the main safe steals.
+
+---
+
+## 7. Rules for agents running anything in-game
 
 - Read-only first, and only what the task needs. Prefer `FindFirstChild` / `GetChildren` on known folders over `GetDescendants`.
 - **Never `require` game modules** from the executor.
