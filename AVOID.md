@@ -15,6 +15,19 @@ Use this as a checklist when writing or running executor scripts against **Fust 
 | Character `LocalScript` (workspace rig) | Bytecode AC hook; console may show errors when injecting — treat as high risk. |
 | `FustSky` (PlayerScripts) | Owns Lighting/Atmosphere every frame **and** runs a lighting tamper check when `ReplicatedStorage.Fust:GetAttribute("ACM")` is true (see below). |
 
+### Telemetry / “handshake” remotes (do not break)
+
+These are **server-facing integrity paths**. Blocking, spoofing, or patching them is out of scope for this repo and is the fastest way to a permanent ban.
+
+| Signal | Observed use |
+|--------|----------------|
+| `Remotes.MotionSync` | Client → server reports (e.g. FustSky `{ lt = "…" }` lighting mismatch). |
+| `Remotes.FpsProbe` | Frame-time / stall stats when certain UIs open. |
+| AnimShield / CharSync internals | Obfuscated heartbeats / integrity — not reverse-engineered here. |
+| GunControl Verdicts | `debug.info` stack checks on fire callers. |
+
+**Rule:** leave shield scripts running. Do not `hookfunction` / `getconnections` / block FireServer / disable LocalScripts. Stay in PlayerGui + camera + VirtualInput only.
+
 ### FustSky lighting check (fullbright / time changer)
 
 Every 0.25 s it compares what it set (`want`) against live values. If any stays **brighter** than wanted for 3 s it fires `Remotes.MotionSync:FireServer({ lt = "<prop> <value>" })` (throttled to once per 300 s).
@@ -33,7 +46,8 @@ Staff tooling (e.g. `FustAdminESP2`) uses **`Highlight` + `workspace.FustESPOutl
 
 ## Avoid (high risk) — ESP & movement
 
-- **Hooking or blocking remotes** (`RemoteSpy` block/ignore, spoofed shoot payloads).
+- **Hooking or blocking remotes** (`RemoteSpy` block/ignore, spoofed shoot / MotionSync / FpsProbe payloads).
+- **Breaking AC handshakes** — disable AnimShield/CharSync, patch shield LocalScripts, spoof integrity replies.
 - **`Drawing` / `Drawing.new` ESP** — common exploit fingerprint; heavy per-frame line updates.
 - **Editing other players’ characters** — attachments / beams / highlights on their rig (`CharSync` risk).
 - **RenderStepped spam** on many players (lag probes + obvious cheat pattern).
@@ -49,22 +63,23 @@ These are **especially** likely to trip Fust after GunControl / server validatio
 | Technique | Why |
 |-----------|-----|
 | **True silent aim** — bullets hit without camera matching | Server/client compare aim origin, direction, and timing; mismatch flags. |
-| **Hooking `workspace:Raycast` / `FindPartOnRay`** for hit redirection | Stack / integrity checks; obvious tamper. |
+| **Hooking `workspace:Raycast` / `FindPartOnRay`** for hit redirection | Stack / integrity checks; obvious tamper. LOS checks for *our* aim filter are fine; redirecting the game’s gun rays is not. |
 | **Hooking or wrapping `GunControl` fire functions** | `debug.info(n, "sf")` validates source paths; foreign callers fail Verdicts. |
 | **Spoofing shoot `FireServer` arguments** (direction, hit part, timestamp) | Server-side sanity + AC telemetry. |
 | **`hookmetamethod` on RemoteEvent** | Classic AC target; overlaps with AnimShield. |
-| **Instant snap > few degrees per frame** every shot | Statistical aim snaps vs input / camera delta. |
-| **Aim while not ADS** (`FustAimGun` / `FustAimBow` false) | Breaks expected input state machine. |
-| **Fighting `FustPad` `aimStep` every frame** | Two systems rotating camera = erratic signal. |
+| **Instant snap > ~10–14° per frame** every shot | Statistical aim snaps vs input / camera delta. |
+| **Aim while not ADS** when the game expects ADS | Breaks expected input state machine (bundle defaults allow non-ADS; keep Require ADS on for lower profile). |
+| **Fighting `FustPad` `aimStep` every frame** | Two systems rotating camera = erratic signal — prefer `mousemoverel` for assist; camera CFrame only for short silent bursts. |
 
-**We do not ship true silent aim in this repo** for those reasons.
+**We do not ship true silent aim or AC handshake bypass in this repo.**
 
 ---
 
 ## Prefer (lower profile) — ESP
 
-- **PlayerGui-only 2D ESP** — pooled frames; ~5 Hz; stop loop when off.
+- **PlayerGui-only 2D ESP** — pooled frames; default ~30 Hz (slider 30–240); stop loop when master off.
 - **Distance + target caps**, skeleton LOD, health bar only within short range slider.
+- Reuse scan buffers; write frame properties only on change.
 
 See `modules/fust_esp.luau` (loaded by `loader/bootstrap.luau`).
 
@@ -72,16 +87,19 @@ See `modules/fust_esp.luau` (loaded by `loader/bootstrap.luau`).
 
 ## Prefer (lower profile) — aim (what this repo implements)
 
-All in **`modules/fust_shell.luau` → Aim tab** (logic in `modules/fust_aim.luau`):
+All in **`modules/fust_shell.luau` → Aimbot tab** (logic in `modules/fust_aim.luau`), bundle **v2.5.0+**:
 
 | Feature | Behavior |
 |---------|----------|
-| **Sticky assist** | Small camera pull toward target **only while ADS** (game aim attributes set). Capped degrees/frame. |
-| **Snap on LMB** | Optional, marked risky: one small camera nudge on fire if target already inside **tight FOV** — **not** bullet redirection. |
-| **No hooks** | Does not touch GunControl, remotes, or Raycast. |
-| **Tunables** | Assist FOV, strength, snap FOV, max distance, bone (Head / UpperTorso / HRP). |
+| **Sticky assist** | Camera / mouse pull toward target while enabled (+ hold key if required). Capped degrees/frame. |
+| **Mouse drive** | Default: `mousemoverel` so FustPad sees real input. |
+| **Camera silent (LMB)** | Risky: multi-step **camera CFrame** snap inside silent FOV on fire + short hold — **not** bullet redirect. Tunables: FOV, max deg, steps. |
+| **Visible check** | Optional `workspace:Raycast` LOS for *target pick only* (shared RaycastParams). Does not hook gun rays. |
+| **Triggerbot** | Risky: VirtualInput click when bone in deadzone. |
+| **No hooks** | Does not touch GunControl, remotes, metamethods, or Raycast hooks. |
+| **Panic** | Instantly clears aimbot / silent / trigger / time changer flags. |
 
-Defaults are conservative (assist off, snap off). **Test on an alt first.**
+Defaults are conservative (assist / silent / trigger off). **Test on an alt first.** After the 2026-11-06 ban, do not test Lighting writes on a main.
 
 ---
 
@@ -93,6 +111,6 @@ Defaults are conservative (assist off, snap off). **Test on an alt first.**
 
 ## If you get kicked or banned
 
-Stop scripts on that account. Do not escalate into AC bypass or remote hooks.
+Stop scripts on that account. Do not escalate into AC bypass, remote hooks, or handshake spoofing.
 
-Last updated from MCP inspection of live Fust Survival client — re-verify after game updates.
+Last updated **2026-11-06** (bundle v2.5.0 + permanent Cheating ban from Lighting ACM) — re-verify after game updates.
