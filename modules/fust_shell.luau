@@ -7,7 +7,7 @@ return function(deps)
 	local Misc = deps.Misc
 	local Exploit = deps.Exploit
 	local Presets = deps.Presets
-	local bundleVersion = deps.BundleVersion or "2.17.0"
+	local bundleVersion = deps.BundleVersion or "2.18.0"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false
@@ -22,7 +22,7 @@ return function(deps)
 		Subtitle = bundleVersion,
 		Footer = bundleVersion,
 		Intro = false,
-		ToggleKey = Enum.KeyCode.RightControl,
+		ToggleKey = Enum.KeyCode.LeftAlt,
 		Size = Vector2.new(640, 640),
 		ConfigFolder = "FustHub",
 		PerGameConfigs = true,
@@ -888,7 +888,7 @@ return function(deps)
 		Min = 5,
 		Max = 60,
 		Default = 60,
-		Increment =  5,
+		Increment = 5,
 		Flag = "Fust_EspRate",
 		Callback = function(v)
 			Esp.rate = v
@@ -1545,25 +1545,9 @@ return function(deps)
 			end
 		end,
 	})
-	moveSec:Slider({
-		Name = "Wall depth",
-		Min = 0.1,
-		Max = 2,
-		Default = 0.2,
-		Increment = 0.01,
-		Flag = "Fust_WallDepth",
-		DependsOn = "Fust_Noclip",
-		Callback = function(v)
-			if Misc then
-				Misc.wallDepth = v
-				Misc.wallDepthMax = math.max(v, Misc.wallDepthMin or 0.1)
-			end
-		end,
-	})
 	moveSec:Toggle({
-		Name = "Full noclip (FustBodyBlock)",
-		Default = false,
-		Risky = true,
+		Name = "FustBodyBlock group",
+		Default = true,
 		Flag = "Fust_NoclipBodyBlock",
 		DependsOn = "Fust_Noclip",
 		Callback = function(v)
@@ -1575,7 +1559,21 @@ return function(deps)
 			end
 		end,
 	})
-	moveSec:Label({ Text = "external: partial — torso/HRP collide, limbs off, Wall Depth phases core" })
+	moveSec:Slider({
+		Name = "Noclip depth",
+		Min = 0.05,
+		Max = 0.5,
+		Default = 0.2,
+		Increment = 0.01,
+		Flag = "Fust_NoclipDepth",
+		DependsOn = "Fust_Noclip",
+		Callback = function(v)
+			if Misc then
+				Misc.noclipDepth = v
+			end
+		end,
+	})
+	moveSec:Label({ Text = "external: Depth 0.2, Min 0.1 — uses game FustBodyBlock + phase step" })
 
 	local lightSec = worldTab:Section({ Name = "Custom lighting", Icon = "sun", Side = "Right" })
 	lightSec:Label({ Text = "Matches external.wtf time/brightness — FustSky ACM may flag." })
@@ -2321,6 +2319,12 @@ return function(deps)
 			Window:Unload()
 		end,
 	})
+
+	if Window.KeybindsSection then
+		pcall(function()
+			Window:KeybindsSection(setTab, { Side = "Left" })
+		end)
+	end
 
 	local bundle = {}
 	function bundle.destroy()
