@@ -8,7 +8,7 @@ return function(deps)
 	local Exploit = deps.Exploit
 	local Presets = deps.Presets
 	local Hud = deps.Hud
-	local bundleVersion = deps.BundleVersion or "2.19.1"
+	local bundleVersion = deps.BundleVersion or "2.19.2"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false
@@ -264,9 +264,7 @@ return function(deps)
 	})
 
 	local manipSec = aimTab:Section({ Name = "Manipulation", Icon = "zap", Side = "Left" })
-	manipSec:Label({
-		Text = "Camera burst + MANIP HUD (pair with Exploit for Shoot hook).",
-	})
+	manipSec:Label("Camera burst + MANIP HUD (pair with Exploit for Shoot hook).")
 	manipSec:Toggle({
 		Name = "Enabled",
 		Default = false,
@@ -584,7 +582,7 @@ return function(deps)
 	})
 
 	local exploitSec = aimTab:Section({ Name = "Exploit", Icon = "alert-triangle", Side = "Right" })
-	exploitSec:Label({ Text = "Shoot/Swing FireServer redirect + fullbright stack." })
+	exploitSec:Label("Shoot/Swing FireServer redirect + fullbright stack.")
 	if Exploit then
 		exploitSec:Toggle({
 			Name = "True silent",
@@ -1638,10 +1636,10 @@ return function(deps)
 			end
 		end,
 	})
-	moveSec:Label({ Text = "external: sit FustAtv DriverSeat — head off, wheel cols, Wall Depth" })
+	moveSec:Label("external: sit FustAtv DriverSeat — head off, wheel cols, Wall Depth")
 
 	local lightSec = worldTab:Section({ Name = "Custom lighting", Icon = "sun", Side = "Right" })
-	lightSec:Label({ Text = "Matches external.wtf time/brightness — FustSky ACM may flag." })
+	lightSec:Label("Matches external.wtf time/brightness — FustSky ACM may flag.")
 	lightSec:Toggle({
 		Name = "Enabled",
 		Default = false,
@@ -2417,6 +2415,7 @@ return function(deps)
 	bundle.Misc = Misc
 	bundle.Exploit = Exploit
 	bundle.Presets = Presets
+	bundle.Hud = Hud
 	bundle.applyExternalFull = Presets and Presets.applyExternalFull
 	bundle.panic = panic
 	return bundle
