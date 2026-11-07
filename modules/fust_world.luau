@@ -1,10 +1,9 @@
 -- World ESP (PlayerGui) + camera helpers. factory(deps) -> World
--- Custom lighting optional (same class as external.wtf — ACM lt risk). No Drawing API.
+-- No Lighting paints (ACM MotionSync lt). No Drawing API.
 return function(deps)
 	local Players = deps.Players
 	local RunService = deps.RunService
 	local UserInputService = deps.UserInputService
-	local Lighting = game:GetService("Lighting")
 	local LOCAL = deps.LocalPlayer
 	local Workspace = game:GetService("Workspace")
 
@@ -16,8 +15,6 @@ return function(deps)
 		espEnabled = false,
 		rate = 15,
 		maxDist = 600,
-		nodeMaxDist = 0, -- 0 = use maxDist
-		showNodeHp = false,
 		fontsize = 12,
 		color = Color3.fromRGB(220, 220, 220),
 
@@ -48,16 +45,10 @@ return function(deps)
 			auto_turret = false,
 			shotgun_trap = false,
 			landmine = false,
+			backpack = false,
 			world_item = false,
 			patrol_heli = false,
 			tool_cupboard = false,
-			furnace = false,
-			campfire = false,
-			sleeping_bag = false,
-			loot_bag = false,
-			workbench = false,
-			boat = false,
-			arrow_pickup = false,
 		},
 
 		zoomHeld = false,
@@ -75,17 +66,6 @@ return function(deps)
 		_tp3Conn = nil,
 		_tp3Yaw = 0,
 		_tp3Pitch = 0,
-
-		customLight = false,
-		lightBrightness = 2,
-		lightClock = 14,
-		lightAmbient = nil,
-		lightOutdoor = nil,
-		lightContrast = nil,
-		lightExposure = nil,
-		noFog = false,
-		_lightConn = nil,
-		_lightSaved = nil,
 	}
 
 	local overlay
@@ -93,6 +73,7 @@ return function(deps)
 	local index = {} -- { kind, inst, part, text }
 	local indexList = {}
 	local folderConns = {}
+	local near = {} -- rows in range with their toggle on, nearest first (rebuilt each scan)
 	local heartbeatConn
 	local scanAcc, renderAcc = 0, 0
 	local cam = Workspace.CurrentCamera
@@ -193,7 +174,7 @@ return function(deps)
 			or model:FindFirstChildWhichIsA("BasePart", true)
 	end
 
-	local function addIndexed(kind, inst, labelText)
+	local function addIndexed(kind, inst, labelText, classify)
 		if index[inst] then
 			index[inst].text = labelText
 			return
@@ -202,7 +183,7 @@ return function(deps)
 		if not part then
 			return
 		end
-		local row = { kind = kind, inst = inst, part = part, text = labelText }
+		local row = { kind = kind, inst = inst, part = part, text = labelText, classify = classify }
 		index[inst] = row
 		indexList[#indexList + 1] = row
 	end
@@ -251,13 +232,6 @@ return function(deps)
 		world_item = Color3.fromRGB(200, 200, 200),
 		patrol_heli = Color3.fromRGB(255, 80, 80),
 		tool_cupboard = Color3.fromRGB(160, 200, 255),
-		furnace = Color3.fromRGB(255, 140, 80),
-		campfire = Color3.fromRGB(255, 170, 60),
-		sleeping_bag = Color3.fromRGB(180, 200, 255),
-		loot_bag = Color3.fromRGB(255, 210, 100),
-		workbench = Color3.fromRGB(160, 160, 200),
-		boat = Color3.fromRGB(80, 180, 255),
-		arrow_pickup = Color3.fromRGB(200, 200, 120),
 	}
 
 	local function nodeKind(model)
@@ -380,23 +354,11 @@ return function(deps)
 		if string.find(kind, "landmine", 1, true) or string.find(kind, "mine", 1, true) then
 			return "landmine"
 		end
+		if string.find(kind, "backpack", 1, true) then
+			return "backpack"
+		end
 		if string.find(kind, "cupboard", 1, true) or string.find(kind, "tool_cupboard", 1, true) or string.find(kind, "tc", 1, true) then
 			return "tool_cupboard"
-		end
-		if string.find(kind, "furnace", 1, true) then
-			return "furnace"
-		end
-		if string.find(kind, "campfire", 1, true) or string.find(kind, "fire", 1, true) then
-			return "campfire"
-		end
-		if string.find(kind, "sleeping", 1, true) or string.find(kind, "bed", 1, true) then
-			return "sleeping_bag"
-		end
-		if string.find(kind, "workbench", 1, true) then
-			return "workbench"
-		end
-		if string.find(kind, "backpack", 1, true) then
-			return "loot_bag"
 		end
 		if string.find(kind, "box", 1, true) then
 			if string.find(kind, "large", 1, true) then
@@ -440,37 +402,20 @@ return function(deps)
 			end
 			return table.concat(bits, " ")
 		end
-		if kind == "loot_bag" then
-			return "Loot bag"
-		end
-		local nodeKinds = { trees = true, stone = true, metal = true, sulfur = true }
-		if nodeKinds[kind] and World.showNodeHp then
-			local hp = inst:GetAttribute("Hp")
-			local mx = inst:GetAttribute("MaxHp")
-			local base = labelForNode(inst, kind)
-			if hp and mx and tonumber(mx) and tonumber(mx) > 0 then
-				local pct = math.floor((tonumber(hp) or 0) / tonumber(mx) * 100 + 0.5)
-				return string.format("%s [%d%%]", base, pct)
-			end
-			return base
-		end
 		local pretty = kind:gsub("_", " ")
 		return pretty:gsub("^%l", string.upper)
-	end
-
-	local function labelForNode(inst, kind)
-		local nt = inst:GetAttribute("NodeType") or inst.Name
-		return tostring(nt)
 	end
 
 	local function watchFolder(folder, classify)
 		if not folder then
 			return
 		end
+		-- Everything is indexed; toggles are applied when the near list is built, so turning a
+		-- category on later shows it straight away.
 		local function consider(child)
 			local kind, text = classify(child)
-			if kind and World.toggles[kind] ~= false then
-				addIndexed(kind, child, text or labelFor(kind, child))
+			if kind then
+				addIndexed(kind, child, text or labelFor(kind, child), classify)
 			end
 		end
 		for _, child in ipairs(folder:GetChildren()) do
@@ -547,21 +492,6 @@ return function(deps)
 		watchFolder(Workspace:FindFirstChild("FustPatrolHeli"), function(m)
 			return "patrol_heli", "Patrol Heli"
 		end)
-		watchFolder(Workspace:FindFirstChild("FustBoats"), function(m)
-			return "boat", "Boat"
-		end)
-		watchFolder(Workspace:FindFirstChild("ArrowPickups"), function(m)
-			return "arrow_pickup", "Arrow"
-		end)
-	end
-
-	local NODE_KINDS = { trees = true, stone = true, metal = true, sulfur = true, hemp = true }
-
-	local function maxDistForKind(kind)
-		if NODE_KINDS[kind] and World.nodeMaxDist and World.nodeMaxDist > 0 then
-			return World.nodeMaxDist
-		end
-		return World.maxDist
 	end
 
 	local function originPos()
@@ -587,46 +517,21 @@ return function(deps)
 			return
 		end
 		local drawn = 0
-		local candidates = {}
-
-		for i = 1, #indexList do
-			local row = indexList[i]
-			local inst = row.inst
-			if not inst or not inst.Parent then
-				-- stale; skip (rebuild will clean)
-			elseif World.toggles[row.kind] == false then
-				-- off
-			else
-				local part = row.part
-				if part and part.Parent then
-					local maxD = maxDistForKind(row.kind)
-					local maxD2 = maxD * maxD
-					local pos = part.Position
-					local d = pos - origin
-					local d2 = d.X * d.X + d.Y * d.Y + d.Z * d.Z
-					if d2 <= maxD2 then
-						if World.showNodeHp and NODE_KINDS[row.kind] then
-							row.text = labelFor(row.kind, inst)
-						end
-						candidates[#candidates + 1] = { row = row, d2 = d2, pos = pos }
+		for i = 1, #near do
+			local row = near[i]
+			local part = row.part
+			if part and part.Parent and row.inst.Parent then
+				local pos = part.Position
+				local vp, on = cam:WorldToViewportPoint(pos)
+				if on and vp.Z > 0 then
+					drawn += 1
+					local dm = math.floor((pos - origin).Magnitude + 0.5)
+					if row.dm ~= dm or row.shown ~= row.text then
+						row.dm, row.shown = dm, row.text
+						row.label = row.text .. " [" .. dm .. "m]"
 					end
+					setLabel(getLabel(drawn), vp.X, vp.Y, row.label, KIND_COLOR[row.kind] or World.color, World.fontsize)
 				end
-			end
-		end
-
-		table.sort(candidates, function(a, b)
-			return a.d2 < b.d2
-		end)
-
-		for i = 1, math.min(#candidates, MAX_LABELS) do
-			local c = candidates[i]
-			local vp, on = cam:WorldToViewportPoint(c.pos)
-			if on and vp.Z > 0 then
-				drawn += 1
-				local dist = math.sqrt(c.d2)
-				local text = string.format("%s [%dm]", c.row.text, math.floor(dist + 0.5))
-				local col = KIND_COLOR[c.row.kind] or World.color
-				setLabel(getLabel(drawn), vp.X, vp.Y, text, col, World.fontsize)
 			end
 		end
 		for i = drawn + 1, #labels do
@@ -646,7 +551,7 @@ return function(deps)
 		if heartbeatConn then
 			return
 		end
-		scanAcc, renderAcc = 0, 0
+		scanAcc, renderAcc = SCAN_TICK, 0
 		heartbeatConn = RunService.Heartbeat:Connect(function(dt)
 			if not World.espEnabled then
 				stopLoop()
@@ -664,6 +569,41 @@ return function(deps)
 						table.remove(indexList, i)
 					elseif not row.part or not row.part.Parent then
 						row.part = rootPart(row.inst)
+					end
+				end
+				table.clear(near)
+				local origin = originPos()
+				if origin then
+					local maxD2 = World.maxDist * World.maxDist
+					for i = 1, #indexList do
+						local row = indexList[i]
+						local part = row.part
+						if World.toggles[row.kind] ~= false and part and part.Parent then
+							local d = part.Position - origin
+							local d2 = d.X * d.X + d.Y * d.Y + d.Z * d.Z
+							if d2 <= maxD2 then
+								row.d2 = d2
+								near[#near + 1] = row
+							end
+						end
+					end
+					table.sort(near, function(x, y)
+						return x.d2 < y.d2
+					end)
+					for i = #near, MAX_LABELS + 1, -1 do
+						near[i] = nil
+					end
+					-- live text (node HP, opened crates) for what is actually drawn
+					for i = #near, 1, -1 do
+						local row = near[i]
+						if row.classify then
+							local ok, kind, text = pcall(row.classify, row.inst)
+							if ok and not kind then
+								table.remove(near, i)
+							elseif ok then
+								row.text = text or labelFor(kind, row.inst)
+							end
+						end
 					end
 				end
 			end
@@ -692,139 +632,10 @@ return function(deps)
 		end
 	end
 
-	local function snapshotLighting()
-		if World._lightSaved then
-			return
-		end
-		local atmo = Lighting:FindFirstChildOfClass("Atmosphere")
-		local cc = Lighting:FindFirstChildOfClass("ColorCorrectionEffect")
-		World._lightSaved = {
-			Brightness = Lighting.Brightness,
-			ClockTime = Lighting.ClockTime,
-			Ambient = Lighting.Ambient,
-			OutdoorAmbient = Lighting.OutdoorAmbient,
-			ExposureCompensation = Lighting.ExposureCompensation,
-			Contrast = cc and cc.Contrast,
-			Density = atmo and atmo.Density,
-			Haze = atmo and atmo.Haze,
-		}
-	end
-
-	local function restoreLighting()
-		local s = World._lightSaved
-		if not s then
-			return
-		end
-		pcall(function()
-			Lighting.Brightness = s.Brightness
-			Lighting.ClockTime = s.ClockTime
-			Lighting.Ambient = s.Ambient
-			Lighting.OutdoorAmbient = s.OutdoorAmbient
-			local cc = Lighting:FindFirstChildOfClass("ColorCorrectionEffect")
-			if cc and s.Contrast ~= nil then
-				cc.Contrast = s.Contrast
-			end
-			local atmo = Lighting:FindFirstChildOfClass("Atmosphere")
-			if atmo then
-				if s.Density ~= nil then
-					atmo.Density = s.Density
-				end
-				if s.Haze ~= nil then
-					atmo.Haze = s.Haze
-				end
-			end
-			if s.ExposureCompensation ~= nil then
-				Lighting.ExposureCompensation = s.ExposureCompensation
-			end
-		end)
-		World._lightSaved = nil
-	end
-
-	function World:applyCustomLightStep()
-		if not self.customLight then
-			return
-		end
-		pcall(function()
-			Lighting.Brightness = self.lightBrightness or 2
-			Lighting.ClockTime = self.lightClock or 14
-			if self.lightAmbient then
-				Lighting.Ambient = self.lightAmbient
-			end
-			if self.lightOutdoor then
-				Lighting.OutdoorAmbient = self.lightOutdoor
-			end
-			if self.lightContrast then
-				local cc = Lighting:FindFirstChildOfClass("ColorCorrectionEffect")
-				if cc then
-					cc.Contrast = self.lightContrast
-				end
-			end
-			if self.lightExposure then
-				Lighting.ExposureCompensation = self.lightExposure
-			end
-			if self.noFog then
-				local atmo = Lighting:FindFirstChildOfClass("Atmosphere")
-				if atmo then
-					atmo.Density = 0
-					atmo.Haze = 0
-				end
-			end
-		end)
-	end
-
-	function World:syncCustomLight()
-		if self._lightConn then
-			self._lightConn:Disconnect()
-			self._lightConn = nil
-		end
-		if not self.customLight then
-			restoreLighting()
-			return
-		end
-		snapshotLighting()
-		self:applyCustomLightStep()
-		self._lightConn = RunService.RenderStepped:Connect(function()
-			self:applyCustomLightStep()
-		end)
-	end
-
-	function World:applyExternalLightPreset()
-		self.customLight = true
-		self.lightBrightness = 2
-		self.lightClock = 14
-		self.lightExposure = 0.35
-		self.lightContrast = 0.15
-		self.noFog = true
-		self:syncCustomLight()
-	end
-
-	function World:applyExternalWorldEspPreset()
-		self.espEnabled = true
-		self.maxDist = 800
-		self.nodeMaxDist = 400
-		self.showNodeHp = true
-		self.toggles.trees = true
-		self.toggles.stone = true
-		self.toggles.metal = true
-		self.toggles.sulfur = true
-		self.toggles.hemp = true
-		self.toggles.loot_barrel = true
-		self.toggles.loot_crate = true
-		self.toggles.military_crate = true
-		self.toggles.loot_bag = true
-		self.toggles.furnace = true
-		self.toggles.wooden_box = true
-		self.toggles.large_box = true
-		self.toggles.sleeper = true
-		self.toggles.airdrop = true
-		self:setEsp(true)
-	end
-
 	function World:sync()
 		self:syncZoom()
 		self:syncFreecam()
 		self:syncTp3()
-		self:syncCustomLight()
 	end
 
 	function World:syncZoom()
@@ -927,11 +738,9 @@ return function(deps)
 
 	function World:destroy()
 		self.espEnabled = false
-		self.customLight = false
 		self.freecamOn = false
 		self.tp3On = false
 		self.zoomHeld = false
-		self:syncCustomLight()
 		stopLoop()
 		if self._fcConn then
 			self._fcConn:Disconnect()
