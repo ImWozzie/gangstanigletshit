@@ -165,4 +165,12 @@ Commit only when user asks. Use per-commit `-c user.name=ImWozzie -c user.email=
 - [ ] `BUNDLE_VERSION` bumped  
 - [ ] Copy to push repo + push when requested  
 
-Last aligned: **v2.18.0** — Drawing ESP/FOV, external presets, exploit stack.
+Last aligned: **v2.20.0** — Drawing ESP/FOV, external presets, exploit stack.
+
+### v2.20.0 additions (ESP / world / shell)
+
+- **ESP:** weapon class colours (`heldClassColor`, gun/bow/melee/explosive/tool from ItemId words), skin in brackets; armour line head-to-feet + `ARMOURED` tag (`armor` default on); `VISIBLE` / `HIDDEN` tags (`visTags`); `rainbow` + `rainbowSpeed`; tracer `tracerOrigin` (Bottom / Crosshair / Top), `tracerThickness`, `tracerFade`; `lookMode` (All / Aiming only); arrows `arrowsThreatOnly`, `arrowColor`; `aimWarnMode` (Colour only / Banner / Banner + flash).
+- **Hit feedback:** `hitLog` / `killToast` / `toastMax` — read the game's own `LastHitById`, `LastHitAt`, `Dead`, `LastHitWeapon` player attributes every scan; no remote hooks.
+- **World:** `building` (Buildings folder: tier, piece, HP/Max, %) with `buildingMaxPct` filter applied at scan time; `locked_door` (Deployables with `HasLock`: locked / open / HP); vehicle labels show fuel/cap, HP/max/%, engine.
+- **Radar:** bootstrap now loads `fust_hud` (`deps.Hud`); shell Visuals → Radar wires size / range / rotate / edge / NPCs / offset. Staff detector is **not** wired.
+- **Shell:** Visuals → Style, Awareness, Hit feedback, Radar sections; Settings → Keybinds (`Window:KeybindsSection`); menu key **LeftAlt**.
