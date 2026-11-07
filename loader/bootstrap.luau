@@ -7,7 +7,7 @@
   Re-run to refresh all modules from GitHub. Update only esp/aim/shell/prism on GitHub independently.
 ]]
 
-local BUNDLE_VERSION = "2.22.0"
+local BUNDLE_VERSION = "2.23.0"
 local CACHE_BUST = tostring(os.clock()):gsub("%.", "")
 
 local MANIFEST_URL = "https://raw.githubusercontent.com/ImWozzie/gangstanigletshit/main/manifest.luau"
@@ -22,6 +22,7 @@ local DEFAULT_MANIFEST = {
 		world = "modules/fust_world.luau",
 		misc = "modules/fust_misc.luau",
 		exploit = "modules/fust_exploit.luau",
+		sande = "modules/fust_sande.luau",
 		presets = "modules/fust_presets.luau",
 		hud = "modules/fust_hud.luau",
 		shell = "modules/fust_shell.luau",
@@ -125,6 +126,11 @@ local Exploit = exploitFactory and exploitFactory(deps)
 	or { destroy = function() end, syncHook = function() end, applyExternalExploitPreset = function() end }
 deps.Exploit = Exploit
 
+local sandeFactory = paths.sande and loadModule(repo, branch, paths.sande, "sande") or nil
+local Sande = sandeFactory and sandeFactory(deps)
+	or { destroy = function() end, toggle = function() end, stop = function() end, enabled = false }
+deps.Sande = Sande
+
 local hudFactory = paths.hud and loadModule(repo, branch, paths.hud, "hud") or nil
 local Hud = hudFactory and hudFactory(deps) or nil
 deps.Hud = Hud
@@ -141,6 +147,7 @@ env.__FustAim = Aim
 env.__FustWorld = World
 env.__FustMisc = Misc
 env.__FustExploit = Exploit
+env.__FustSande = Sande
 env.__FustPresets = Presets
 env.__FustHud = Hud
 env.__FustBundle = bundle

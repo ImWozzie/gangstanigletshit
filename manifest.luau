@@ -10,6 +10,7 @@ return {
 		world = "modules/fust_world.luau",
 		misc = "modules/fust_misc.luau",
 		exploit = "modules/fust_exploit.luau",
+		sande = "modules/fust_sande.luau",
 		presets = "modules/fust_presets.luau",
 		hud = "modules/fust_hud.luau",
 		shell = "modules/fust_shell.luau",

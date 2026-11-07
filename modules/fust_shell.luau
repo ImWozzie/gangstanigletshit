@@ -7,8 +7,9 @@ return function(deps)
 	local Misc = deps.Misc
 	local Hud = deps.Hud
 	local Exploit = deps.Exploit
+	local Sande = deps.Sande
 	local Presets = deps.Presets
-	local bundleVersion = deps.BundleVersion or "2.22.0"
+	local bundleVersion = deps.BundleVersion or "2.23.0"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false
@@ -630,6 +631,84 @@ return function(deps)
 			Name = "Exploit + lighting only",
 			Callback = function()
 				Exploit:applyExternalExploitPreset()
+			end,
+		})
+	end
+
+	local sandeSec = aimTab:Section({ Name = "Sandevistan", Icon = "zap", Side = "Right" })
+	sandeSec:Label("Timed window. Free move. Hits from frozen origin via Shoot magic bullet (not desync).")
+	if Sande then
+		sandeSec:Toggle({
+			Name = "Enabled",
+			Default = false,
+			Risky = true,
+			Flag = "Fust_SandeOn",
+			Callback = function(v)
+				Sande.enabled = v
+				if not v then
+					Sande:stop()
+				end
+			end,
+		})
+		sandeSec:Toggle({
+			Name = "Activate key",
+			Default = false,
+			Risky = true,
+			Flag = "Fust_SandeKey",
+			Mode = "Toggle",
+			Keybind = Enum.KeyCode.Q,
+			DependsOn = "Fust_SandeOn",
+			Callback = function(v)
+				if v then
+					Sande:toggle()
+					local el = Prism.Flags.Fust_SandeKey
+					if el and el.Set then
+						el:Set(false, true)
+					end
+				end
+			end,
+			KeyChanged = function(key)
+				Sande.key = key
+			end,
+		})
+		sandeSec:Slider({
+			Name = "Duration (s)",
+			Min = 0.5,
+			Max = 12,
+			Default = 3,
+			Increment = 0.25,
+			Flag = "Fust_SandeDur",
+			DependsOn = "Fust_SandeOn",
+			Callback = function(v)
+				Sande.duration = v
+			end,
+		})
+		sandeSec:Slider({
+			Name = "FX strength",
+			Min = 0.2,
+			Max = 2,
+			Default = 1,
+			Increment = 0.1,
+			Flag = "Fust_SandeFx",
+			DependsOn = "Fust_SandeOn",
+			Callback = function(v)
+				Sande.fxStrength = v
+			end,
+		})
+		sandeSec:Toggle({
+			Name = "Auto true silent while active",
+			Default = true,
+			Risky = true,
+			Flag = "Fust_SandeSilent",
+			DependsOn = "Fust_SandeOn",
+			Callback = function(v)
+				Sande.autoSilent = v
+			end,
+		})
+		sandeSec:Button({
+			Name = "Stop now",
+			Callback = function()
+				Sande:stop()
 			end,
 		})
 	end
@@ -2120,6 +2199,10 @@ return function(deps)
 			Exploit.swingRedirect = false
 			Exploit:syncHook()
 		end
+		if Sande then
+			Sande.enabled = false
+			Sande:stop()
+		end
 		pcall(function()
 			Prism:Notify({
 				Title = "Panic",
@@ -2613,6 +2696,9 @@ return function(deps)
 
 	local bundle = {}
 	function bundle.destroy()
+		if Sande then
+			Sande:destroy()
+		end
 		if Exploit then
 			Exploit:destroy()
 		end
@@ -2639,6 +2725,7 @@ return function(deps)
 	bundle.World = World
 	bundle.Misc = Misc
 	bundle.Exploit = Exploit
+	bundle.Sande = Sande
 	bundle.Presets = Presets
 	bundle.applyExternalFull = Presets and Presets.applyExternalFull
 	bundle.panic = panic
