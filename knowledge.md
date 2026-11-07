@@ -166,6 +166,19 @@ Readable detection that matches “instant look”:
 
 **Conclusion (updated 14:32):** mouse-drive + auto-click **also** Multihack’d a clean alt (`…T063029Z_Player_6E656_last.log` → `Multihack (10 years left, until 2036-11-03 06:32 UTC)`). Automated gather assist is **disabled** in-repo (v2.6.3), same as Lighting fullbright. Do not iterate gather bots on mains.
 
+**2026-11-06 ~23:40 — Sandevistan / frozen-origin Shoot rewrite (flag class).**
+
+Live `FustCombat` builds Shoot as:
+
+```lua
+origin = Camera.CFrame.Position + LookVector * MUZZLE
+dir = LookVector
+```
+
+Early Sande rewrote `origin` to a **frozen HRP position** while the player kept moving (dir toward aim bone). That is a ghost muzzle — server origin vs live camera/character mismatch. Treat as Multihack/Cheating class, same family as aim snap + thick silent stacks.
+
+**Safe Sande (v2.23.1+):** timed window, ScreenGui FX only, **dir-only** silent, origin = live `cam + look * MUZZLE`. No frozen origin, no wallManip forced on, no Camera ColorCorrection/Blur (FustSky ACM owns Lighting grades / `{ lt }` MotionSync). Cap duration ≤ 8s.
+
 ---
 
 ## 6. Third-party Vault dump (2026-11-06)

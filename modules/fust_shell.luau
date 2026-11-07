@@ -9,7 +9,7 @@ return function(deps)
 	local Exploit = deps.Exploit
 	local Sande = deps.Sande
 	local Presets = deps.Presets
-	local bundleVersion = deps.BundleVersion or "2.23.0"
+	local bundleVersion = deps.BundleVersion or "2.23.1"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false
@@ -636,7 +636,7 @@ return function(deps)
 	end
 
 	local sandeSec = aimTab:Section({ Name = "Sandevistan", Icon = "zap", Side = "Right" })
-	sandeSec:Label("Timed window. Free move. Hits from frozen origin via Shoot magic bullet (not desync).")
+	sandeSec:Label("Timed window. Free move. Dir-only silent (live muzzle origin). No frozen origin — that bans.")
 	if Sande then
 		sandeSec:Toggle({
 			Name = "Enabled",
@@ -674,8 +674,8 @@ return function(deps)
 		sandeSec:Slider({
 			Name = "Duration (s)",
 			Min = 0.5,
-			Max = 12,
-			Default = 3,
+			Max = 8,
+			Default = 2.5,
 			Increment = 0.25,
 			Flag = "Fust_SandeDur",
 			DependsOn = "Fust_SandeOn",

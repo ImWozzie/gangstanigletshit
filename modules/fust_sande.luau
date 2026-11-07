@@ -1,7 +1,8 @@
--- Sandevistan window: keybind + duration, free move, frozen hit-origin, Shoot magic bullet.
--- No desync. Origin is snapshotted at activate; Shoot dir/origin rewritten via Exploit.
--- FX: Camera ColorCorrection + Blur and a ScreenGui (vignette, colour split, streaks, timer HUD) only.
--- Never touches Lighting Ambient / Brightness / Exposure.
+-- Sandevistan window: keybind + duration, free move, timed dir-only silent.
+-- AC note (live FustCombat): Shoot.origin = cam.Position + LookVector * MUZZLE.
+-- Freezing origin at HRP after you walk away is a server Multihack/Cheating vector — do not do that.
+-- Combat path: rewrite Shoot.dir toward aim bone only; origin stays live muzzle.
+-- FX: ScreenGui only (vignette / split / streaks / timer). No Camera ColorCorrection/Blur, no Lighting.
 return function(deps)
 	local Players = deps.Players
 	local RunService = deps.RunService
@@ -15,11 +16,10 @@ return function(deps)
 		key = Enum.KeyCode.Q,
 		active = false,
 		endsAt = 0,
-		frozenPos = nil,
 		fxStrength = 1,
+		-- Timed dir rewrite only (safe). Do not enable wallManip / frozen origin.
 		autoSilent = true,
 		_conn = nil,
-		_fx = nil,
 		_gui = nil,
 		_status = nil,
 		_vignette = nil,
@@ -53,25 +53,16 @@ return function(deps)
 		return inst
 	end
 
-	-- Fade the current effects out, then remove them. A new activation can build its own set straight away.
+	-- Fade ScreenGui out, then destroy. No Camera/Lighting post-effects (FustSky ACM watches Lighting grades).
 	local function clearFx()
 		if Sande._fxConn then
 			Sande._fxConn:Disconnect()
 			Sande._fxConn = nil
 		end
-		local fxList, gui = Sande._fx, Sande._gui
-		Sande._fx, Sande._gui = nil, nil
+		local gui = Sande._gui
+		Sande._gui = nil
 		Sande._status, Sande._vignette, Sande._streaks = nil, nil, nil
 		local OUT = 0.35
-		for _, fx in ipairs(fxList or {}) do
-			pcall(function()
-				if fx:IsA("ColorCorrectionEffect") then
-					tween(fx, OUT, { TintColor = Color3.new(1, 1, 1), Contrast = 0, Saturation = 0, Brightness = 0 })
-				elseif fx:IsA("BlurEffect") then
-					tween(fx, OUT, { Size = 0 })
-				end
-			end)
-		end
 		if gui then
 			pcall(function()
 				local flash = gui:FindFirstChild("Flash")
@@ -94,11 +85,6 @@ return function(deps)
 			end)
 		end
 		task.delay(OUT + 0.05, function()
-			for _, fx in ipairs(fxList or {}) do
-				pcall(function()
-					fx:Destroy()
-				end)
-			end
 			if gui then
 				pcall(function()
 					gui:Destroy()
@@ -114,30 +100,6 @@ return function(deps)
 		if not cam then
 			return
 		end
-
-		local fx = {}
-		local cc = new("ColorCorrectionEffect", {
-			Name = "FustSandeCC",
-			TintColor = Color3.new(1, 1, 1),
-			Contrast = 0,
-			Saturation = 0,
-			Brightness = 0,
-		}, cam)
-		fx[#fx + 1] = cc
-		local blur = new("BlurEffect", { Name = "FustSandeBlur", Size = 0 }, cam)
-		fx[#fx + 1] = blur
-		Sande._fx = fx
-
-		-- engage: a hard blur + tint punch that settles into the steady look
-		local tintOn = Color3.fromRGB(150, 225, 255):Lerp(Color3.new(1, 1, 1), math.clamp(1 - strength * 0.6, 0, 0.8))
-		tween(cc, 0.12, { TintColor = CYAN, Contrast = 0.6 * strength, Saturation = -0.5 * strength, Brightness = 0.08 * strength })
-		tween(blur, 0.1, { Size = 14 * strength })
-		task.delay(0.12, function()
-			if Sande._fx == fx then
-				tween(cc, 0.45, { TintColor = tintOn, Contrast = 0.3 * strength, Saturation = -0.3 * strength, Brightness = 0.03 * strength })
-				tween(blur, 0.45, { Size = 3 * strength })
-			end
-		end)
 
 		local pg = LOCAL:FindFirstChildOfClass("PlayerGui")
 		if not pg then
@@ -317,10 +279,8 @@ return function(deps)
 				timeLbl.TextColor3 = Color3.new(1, 1, 1)
 			end
 
-			-- pulse (about 1.6 per second) on the grade and vignette
+			-- pulse (about 1.6 per second) on vignette / split only — no Camera grade
 			local pulse = (math.sin(clock * 10) + 1) * 0.5
-			cc.Contrast = (0.26 + 0.1 * pulse) * strength
-			blur.Size = (2.5 + 1.5 * pulse) * strength
 			for _, e in ipairs(vig:GetChildren()) do
 				e.BackgroundTransparency = math.clamp(0.5 - 0.15 * strength - 0.08 * pulse, 0.15, 0.75)
 			end
@@ -355,9 +315,10 @@ return function(deps)
 			return
 		end
 		Exploit.sandeActive = active
-		Exploit.sandeOrigin = active and Sande.frozenPos or nil
+		-- Never force wallManip / frozen origin. Dir-only while window is open.
 		if active and Sande.autoSilent then
 			Exploit.trueSilent = true
+			Exploit.wallManip = false
 		end
 		if Exploit.syncHook then
 			Exploit:syncHook()
@@ -367,7 +328,6 @@ return function(deps)
 	function Sande:stop()
 		self.active = false
 		self.endsAt = 0
-		self.frozenPos = nil
 		clearFx()
 		pushExploit(false)
 		if self._conn then
@@ -380,17 +340,16 @@ return function(deps)
 		if not self.enabled then
 			return false
 		end
-		local root = hrp()
-		if not root then
+		if not hrp() then
 			return false
 		end
 		if self.active then
 			self:stop()
 		end
 
-		self.frozenPos = root.Position
 		self.active = true
-		self.endsAt = tick() + math.clamp(self.duration or 3, 0.25, 30)
+		-- Cap hard: long windows with silent dir rewrite look like sustained aimbot to staff.
+		self.endsAt = tick() + math.clamp(self.duration or 2.5, 0.25, 8)
 		buildFx(self.fxStrength)
 		pushExploit(true)
 
@@ -415,10 +374,6 @@ return function(deps)
 			end
 			if self._status then
 				self._status.Text = string.format("SANDEVISTAN  %.1fs", left)
-			end
-			-- Origin stays frozen. Player HRP moves freely — magic bullet uses frozenPos.
-			if Exploit then
-				Exploit.sandeOrigin = self.frozenPos
 			end
 		end)
 		return true
