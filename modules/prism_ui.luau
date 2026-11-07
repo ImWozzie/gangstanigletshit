@@ -4173,9 +4173,6 @@ end
 
 -- Label / Stat / Paragraph / Divider ----------------------------------------
 function Section:Label(text)
- if type(text) == "table" then
-  text = text.Text or text.Name or ""
- end
  local label = new("TextLabel", {
  Size = UDim2.new(1, 0, 0, 0),
  AutomaticSize = Enum.AutomaticSize.Y,
