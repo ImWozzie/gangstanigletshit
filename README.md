@@ -10,7 +10,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/ImWozzie/gangstanigle
 
 Re-run to reload. Use **ESP → Script → Refresh from GitHub** in-menu.
 
-**Right Control** — menu. **Settings → external.wtf — LOAD EVERYTHING** for full preset.
+**Left Alt** — menu (rebind in **Settings → Keybinds**). **Settings → external.wtf — LOAD EVERYTHING** for full preset.
 
 ## Modules
 
