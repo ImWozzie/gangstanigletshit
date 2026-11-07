@@ -5,10 +5,10 @@ return function(deps)
 	local Aim = deps.Aim
 	local World = deps.World
 	local Misc = deps.Misc
+	local Hud = deps.Hud
 	local Exploit = deps.Exploit
 	local Presets = deps.Presets
-	local Hud = deps.Hud
-	local bundleVersion = deps.BundleVersion or "2.19.2"
+	local bundleVersion = deps.BundleVersion or "2.20.0"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false
@@ -23,7 +23,7 @@ return function(deps)
 		Subtitle = bundleVersion,
 		Footer = bundleVersion,
 		Intro = false,
-		ToggleKey = Enum.KeyCode.RightControl,
+		ToggleKey = Enum.KeyCode.LeftAlt,
 		Size = Vector2.new(640, 640),
 		ConfigFolder = "FustHub",
 		PerGameConfigs = true,
@@ -264,7 +264,9 @@ return function(deps)
 	})
 
 	local manipSec = aimTab:Section({ Name = "Manipulation", Icon = "zap", Side = "Left" })
-	manipSec:Label("Camera burst + MANIP HUD (pair with Exploit for Shoot hook).")
+	manipSec:Label({
+		Text = "Camera burst + MANIP HUD (pair with Exploit for Shoot hook).",
+	})
 	manipSec:Toggle({
 		Name = "Enabled",
 		Default = false,
@@ -582,7 +584,7 @@ return function(deps)
 	})
 
 	local exploitSec = aimTab:Section({ Name = "Exploit", Icon = "alert-triangle", Side = "Right" })
-	exploitSec:Label("Shoot/Swing FireServer redirect + fullbright stack.")
+	exploitSec:Label({ Text = "Shoot/Swing FireServer redirect + fullbright stack." })
 	if Exploit then
 		exploitSec:Toggle({
 			Name = "True silent",
@@ -911,8 +913,11 @@ return function(deps)
 	visSec:Toggle({ Name = "Weapon", Default = true, Flag = "Fust_EspHeld", Callback = function(v)
 		Esp.held = v
 	end })
-	visSec:Toggle({ Name = "Armour", Default = false, Flag = "Fust_EspArmor", Callback = function(v)
+	visSec:Toggle({ Name = "Armour", Description = "What they wear + ARMOURED tag", Default = true, Flag = "Fust_EspArmor", Callback = function(v)
 		Esp.armor = v
+	end })
+	visSec:Toggle({ Name = "Weapon class colours", Description = "Gun / bow / melee / explosive tint on the weapon line", Default = true, Flag = "Fust_EspHeldCls", Callback = function(v)
+		Esp.heldClassColor = v
 	end })
 	visSec:Toggle({ Name = "Health bar", Default = true, Flag = "Fust_EspHpBar", Callback = function(v)
 		Esp.healthBar = v
@@ -1022,15 +1027,116 @@ return function(deps)
 	})
 	rangeSec:Slider({
 		Name = "ESP FPS",
+		Description = "60 = every frame, synced to the camera (smoothest)",
 		Min = 5,
 		Max = 60,
-		Default = 30,
-		Increment = 1,
+		Default = 60,
+		Increment = 5,
 		Flag = "Fust_EspRate",
 		Callback = function(v)
 			Esp.rate = v
 		end,
 	})
+
+	local styleSec = visTab:Section({ Name = "Style", Icon = "palette", Side = "Right" })
+	styleSec:Toggle({ Name = "Rainbow", Description = "Cycles the box / skeleton colour", Default = false, Flag = "Fust_EspRainbow", Callback = function(v)
+		Esp.rainbow = v
+	end })
+	styleSec:Slider({ Name = "Rainbow speed", Min = 0.05, Max = 1, Default = 0.25, Increment = 0.05, Flag = "Fust_EspRainbowSpd", DependsOn = "Fust_EspRainbow", Callback = function(v)
+		Esp.rainbowSpeed = v
+	end })
+	styleSec:Dropdown({ Name = "Tracer origin", Options = { "Bottom", "Crosshair", "Top" }, Default = "Bottom", Flag = "Fust_EspTracerFrom", DependsOn = "Fust_EspTrace", Callback = function(v)
+		Esp.tracerOrigin = v
+	end })
+	styleSec:Slider({ Name = "Tracer thickness", Min = 1, Max = 4, Default = 1.5, Increment = 0.5, Flag = "Fust_EspTracerThick", DependsOn = "Fust_EspTrace", Callback = function(v)
+		Esp.tracerThickness = v
+	end })
+	styleSec:Toggle({ Name = "Tracer distance fade", Default = true, Flag = "Fust_EspTracerFade", DependsOn = "Fust_EspTrace", Callback = function(v)
+		Esp.tracerFade = v
+	end })
+	styleSec:Toggle({ Name = "VISIBLE / HIDDEN tag", Description = "Needs Visible colour on", Default = false, Flag = "Fust_EspVisTag", Callback = function(v)
+		Esp.visTags = v
+	end })
+
+	local awareSec = visTab:Section({ Name = "Awareness", Icon = "crosshair", Side = "Left" })
+	awareSec:Toggle({ Name = "Facing line", Description = "Line from the head showing where they look", Default = true, Flag = "Fust_EspLook", Callback = function(v)
+		Esp.lookLine = v
+	end })
+	awareSec:Dropdown({ Name = "Facing line shows", Options = { "All", "Aiming only" }, Default = "All", Flag = "Fust_EspLookMode", DependsOn = "Fust_EspLook", Callback = function(v)
+		Esp.lookMode = v
+	end })
+	awareSec:Slider({ Name = "Facing line length", Min = 3, Max = 40, Default = 8, Increment = 1, Flag = "Fust_EspLookLen", DependsOn = "Fust_EspLook", Callback = function(v)
+		Esp.lookLength = v
+	end })
+	awareSec:ColorPicker({ Name = "Facing line colour", Default = Color3.fromRGB(255, 220, 120), Flag = "Fust_EspLookCol", DependsOn = "Fust_EspLook", Callback = function(c)
+		Esp.lookColor = c
+	end })
+	awareSec:Toggle({ Name = "Status tags", Description = "ADS, reload, sprint, crouch, armoured", Default = true, Flag = "Fust_EspTags", Callback = function(v)
+		Esp.statusTags = v
+	end })
+	awareSec:ColorPicker({ Name = "Aiming-in colour", Default = Color3.fromRGB(255, 170, 60), Flag = "Fust_EspAdsCol", Callback = function(c)
+		Esp.adsColor = c
+	end })
+	awareSec:Toggle({ Name = "Aimed-at warning", Description = "When someone aims in at you", Default = true, Flag = "Fust_EspAimWarn", Callback = function(v)
+		Esp.aimWarn = v
+	end })
+	awareSec:Dropdown({ Name = "Warning style", Options = { "Colour only", "Banner", "Banner + flash" }, Default = "Banner", Flag = "Fust_EspAimWarnMode", DependsOn = "Fust_EspAimWarn", Callback = function(v)
+		Esp.aimWarnMode = v
+	end })
+	awareSec:Slider({ Name = "Warning cone", Description = "Degrees their aim must be within", Min = 2, Max = 25, Default = 8, Increment = 1, Flag = "Fust_EspAimCone", DependsOn = "Fust_EspAimWarn", Callback = function(v)
+		Esp.aimCone = v
+	end })
+	awareSec:ColorPicker({ Name = "Warning colour", Default = Color3.fromRGB(255, 60, 60), Flag = "Fust_EspAimWarnCol", DependsOn = "Fust_EspAimWarn", Callback = function(c)
+		Esp.aimWarnColor = c
+	end })
+	awareSec:Toggle({ Name = "Off-screen arrows", Description = "Drawing mode", Default = true, Flag = "Fust_EspArrows", Callback = function(v)
+		Esp.offscreen = v
+	end })
+	awareSec:Toggle({ Name = "Arrows: threats only", Description = "Aiming, or holding a gun / bow / explosive", Default = false, Flag = "Fust_EspArrowThreat", DependsOn = "Fust_EspArrows", Callback = function(v)
+		Esp.arrowsThreatOnly = v
+	end })
+	awareSec:Slider({ Name = "Arrow radius", Min = 80, Max = 400, Default = 220, Increment = 10, Flag = "Fust_EspArrowRad", DependsOn = "Fust_EspArrows", Callback = function(v)
+		Esp.offscreenRadius = v
+	end })
+	awareSec:ColorPicker({ Name = "Arrow colour", Default = Color3.fromRGB(255, 120, 200), Flag = "Fust_EspArrowCol", DependsOn = "Fust_EspArrows", Callback = function(c)
+		Esp.arrowColor = c
+	end })
+
+	local feedSec = visTab:Section({ Name = "Hit feedback", Icon = "bell", Side = "Left" })
+	feedSec:Toggle({ Name = "Hit confirm", Description = "HIT name - weapon - distance - HP left", Default = true, Flag = "Fust_EspHitLog", Callback = function(v)
+		Esp.hitLog = v
+	end })
+	feedSec:Toggle({ Name = "Kill toast", Description = "KILLED name - weapon - distance", Default = true, Flag = "Fust_EspKillToast", Callback = function(v)
+		Esp.killToast = v
+	end })
+	feedSec:Slider({ Name = "Max lines", Min = 1, Max = 8, Default = 5, Increment = 1, Flag = "Fust_EspToastMax", Callback = function(v)
+		Esp.toastMax = v
+	end })
+
+	if Hud and Hud.setRadar then
+		local radarSec = visTab:Section({ Name = "Radar", Icon = "compass", Side = "Right" })
+		radarSec:Toggle({ Name = "Radar", Default = false, Flag = "Fust_Radar", Callback = function(v)
+			Hud:setRadar(v)
+		end })
+		radarSec:Slider({ Name = "Size", Min = 90, Max = 260, Default = 140, Increment = 10, Flag = "Fust_RadarSize", DependsOn = "Fust_Radar", Callback = function(v)
+			Hud.radarSize = v
+		end })
+		radarSec:Slider({ Name = "Range", Min = 50, Max = 1000, Default = 300, Increment = 25, Flag = "Fust_RadarRange", DependsOn = "Fust_Radar", Callback = function(v)
+			Hud.radarRange = v
+		end })
+		radarSec:Toggle({ Name = "Rotate with camera", Default = true, Flag = "Fust_RadarRotate", DependsOn = "Fust_Radar", Callback = function(v)
+			Hud.radarRotate = v
+		end })
+		radarSec:Toggle({ Name = "Pin far players to edge", Default = true, Flag = "Fust_RadarEdge", DependsOn = "Fust_Radar", Callback = function(v)
+			Hud.radarEdge = v
+		end })
+		radarSec:Toggle({ Name = "Show NPCs", Default = false, Flag = "Fust_RadarNpc", DependsOn = "Fust_Radar", Callback = function(v)
+			Hud.radarNpcs = v
+		end })
+		radarSec:Slider({ Name = "Offset from top", Min = 0, Max = 600, Default = 125, Increment = 5, Flag = "Fust_RadarY", DependsOn = "Fust_Radar", Callback = function(v)
+			Hud.radarOffsetY = v
+		end })
+	end
 
 	local infoSec = visTab:Section({ Name = "Info", Icon = "info", Side = "Right" })
 	infoSec:Toggle({
@@ -1186,6 +1292,23 @@ return function(deps)
 	worldToggle(wVeh, "Minicopter", "Fust_W_Heli", "minicopter")
 	worldToggle(wVeh, "Patrol heli", "Fust_W_Patrol", "patrol_heli")
 	worldToggle(wVeh, "Boats", "Fust_W_Boat", "boat")
+
+	local wBase = worldTab:Section({ Name = "Bases", Icon = "home", Side = "Right" })
+	worldToggle(wBase, "Building pieces", "Fust_W_Building", "building")
+	worldToggle(wBase, "Locked doors / gates", "Fust_W_Locked", "locked_door")
+	wBase:Slider({
+		Name = "Pieces at or under HP %",
+		Description = "100 = all; lower to find weak spots",
+		Min = 5,
+		Max = 100,
+		Default = 100,
+		Increment = 5,
+		Flag = "Fust_W_BuildPct",
+		DependsOn = "Fust_W_Building",
+		Callback = function(v)
+			World.buildingMaxPct = v
+		end,
+	})
 
 	----------------------------------------------------------------------
 	-- Tab: Misc (farm / combat / movement / guns)
@@ -1636,10 +1759,10 @@ return function(deps)
 			end
 		end,
 	})
-	moveSec:Label("external: sit FustAtv DriverSeat — head off, wheel cols, Wall Depth")
+	moveSec:Label({ Text = "external: sit FustAtv DriverSeat — head off, wheel cols, Wall Depth" })
 
 	local lightSec = worldTab:Section({ Name = "Custom lighting", Icon = "sun", Side = "Right" })
-	lightSec:Label("Matches external.wtf time/brightness — FustSky ACM may flag.")
+	lightSec:Label({ Text = "Matches external.wtf time/brightness — FustSky ACM may flag." })
 	lightSec:Toggle({
 		Name = "Enabled",
 		Default = false,
@@ -2383,13 +2506,19 @@ return function(deps)
 		end,
 	})
 
+	if Window.KeybindsSection then
+		pcall(function()
+			Window:KeybindsSection(setTab, { Side = "Left" })
+		end)
+	end
+
 	local bundle = {}
 	function bundle.destroy()
+		if Hud and Hud.destroy then
+			pcall(Hud.destroy, Hud)
+		end
 		if Exploit then
 			Exploit:destroy()
-		end
-		if Hud and Hud.destroy then
-			Hud:destroy()
 		end
 		Aim:destroy()
 		Esp:destroy()
@@ -2414,8 +2543,8 @@ return function(deps)
 	bundle.World = World
 	bundle.Misc = Misc
 	bundle.Exploit = Exploit
-	bundle.Presets = Presets
 	bundle.Hud = Hud
+	bundle.Presets = Presets
 	bundle.applyExternalFull = Presets and Presets.applyExternalFull
 	bundle.panic = panic
 	return bundle
