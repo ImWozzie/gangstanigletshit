@@ -93,7 +93,8 @@ return function(deps)
 		name = true,
 		distance = true,
 		held = true,
-		armor = false,
+		armor = true,
+		heldClassColor = true,
 		healthBar = true,
 		healthBarMaxDist = 50,
 		healthText = false,
@@ -111,6 +112,19 @@ return function(deps)
 		adsColor = Color3.fromRGB(255, 170, 60),
 		offscreen = true,
 		offscreenRadius = 220,
+		arrowColor = nil, -- nil = box colour
+		arrowsThreatOnly = false,
+		aimWarnMode = "Banner", -- "Colour only" | "Banner" | "Banner + flash"
+		lookMode = "All", -- "All" | "Aiming only"
+		visTags = false,
+		rainbow = false,
+		rainbowSpeed = 0.25,
+		tracerOrigin = "Bottom", -- "Bottom" | "Crosshair" | "Top"
+		tracerThickness = 1.5,
+		tracerFade = true,
+		hitLog = true,
+		killToast = true,
+		toastMax = 5,
 	}
 
 	local overlay
@@ -124,11 +138,13 @@ return function(deps)
 	local scanAcc, renderAcc, infoAcc = 0, 0, 0
 	local warnRec
 	local aimersBuf = {}
+	local drawFlash, drawToasts, scanHits
 	local OUTLINE_COLOR = Color3.fromRGB(10, 10, 10)
 	local BAR_BG = Color3.fromRGB(18, 18, 18)
 	local HP_LOW = Color3.fromRGB(230, 70, 60)
 	local HP_HIGH = Color3.fromRGB(90, 210, 110)
 	local HELD_COLOR = Color3.fromRGB(255, 210, 120)
+	local ARMOR_COLOR = Color3.fromRGB(190, 200, 215)
 	local HEAD_UP = Vector3.new(0, 0.6, 0)
 	local FEET_DOWN = Vector3.new(0, 2.9, 0)
 	local rayParams = RaycastParams.new()
@@ -399,6 +415,12 @@ return function(deps)
 		if s.lookOut.f then
 			s.lookOut.f.BackgroundTransparency = 0.5
 		end
+		s.armorLabel = makeText()
+		if s.armorLabel.dtext then
+			s.armorLabel.dtext.Size = 11
+		elseif s.armorLabel.f then
+			s.armorLabel.f.TextSize = 11
+		end
 		s.tagLabel = makeText()
 		if s.tagLabel.dtext then
 			s.tagLabel.dtext.Size = 11
@@ -438,6 +460,7 @@ return function(deps)
 		setVis(s.look, false)
 		setVis(s.lookOut, false)
 		setVis(s.tagLabel, false)
+		setVis(s.armorLabel, false)
 		if s.arrow then
 			setVis(s.arrow, false)
 		end
@@ -705,41 +728,110 @@ return function(deps)
 			)
 	end
 
-	-- Tool.Name is already the display name (knowledge.md). Optional WSkin suffix.
+	local CLASS_COLOR = {
+		gun = Color3.fromRGB(255, 110, 80),
+		bow = Color3.fromRGB(130, 220, 110),
+		melee = Color3.fromRGB(150, 185, 255),
+		explosive = Color3.fromRGB(215, 120, 255),
+		tool = Color3.fromRGB(200, 200, 200),
+	}
+	local CLASS_WORDS = {
+		{ "explosive", { "c4", "satchel", "rocket", "grenade", "beancan", "explosive", "launcher" } },
+		{ "bow", { "bow", "crossbow" } },
+		{ "gun", { "smg", "rifle", "pistol", "revolver", "shotgun", "thompson", "sniper", "lmg", "m249", "ak", "lr", "mp5", "gun", "eoka", "pipe", "semi", "bolt", "carbine", "minigun" } },
+		{ "melee", { "hatchet", "pickaxe", "axe", "sword", "spear", "machete", "knife", "rock", "mace", "club", "cleaver", "sickle", "katana", "bat", "salvaged" } },
+		{ "tool", { "hammer", "plan", "torch", "bandage", "syringe", "medkit", "flashlight", "binocular", "map" } },
+	}
+	local classCache = {}
+	local function weaponClass(id)
+		if not id or id == "" then
+			return nil
+		end
+		local hit = classCache[id]
+		if hit ~= nil then
+			return hit or nil
+		end
+		local lower = id:lower()
+		local found = false
+		for _, row in ipairs(CLASS_WORDS) do
+			for _, w in ipairs(row[2]) do
+				if lower:find(w, 1, true) then
+					found = row[1]
+					break
+				end
+			end
+			if found then
+				break
+			end
+		end
+		classCache[id] = found
+		return found or nil
+	end
+
+	local function titleCase(id)
+		return (id:gsub("_", " "):gsub("(%a)([%w]*)", function(a, b)
+			return a:upper() .. b
+		end))
+	end
+
+	-- Tool.Name is already the display name. Returns text, weapon class.
 	local function heldText(char)
 		local tool = char:FindFirstChildOfClass("Tool")
 		if not tool then
 			return nil
 		end
+		local id = tool:GetAttribute("ItemId")
+		local cls = weaponClass(type(id) == "string" and id or tool.Name)
 		local skin = tool:GetAttribute("WSkin")
 		if type(skin) == "string" and skin ~= "" and skin ~= "none" then
-			return tool.Name .. " · " .. skin
+			return tool.Name .. " (" .. titleCase(skin) .. ")", cls
 		end
-		return tool.Name
+		return tool.Name, cls
 	end
 
-	-- Unique FustWear ItemIds → short readable list (no require of Fust.Items).
+	local ARMOR_WORDS = { "armor", "armour", "vest", "plate", "helmet", "tactical", "metal", "riot", "heavy" }
+	local SLOT_ORDER = { head = 1, torso = 2, legs = 3, feet = 4, hands = 5 }
+	-- FustWear pieces (one child per body part, several per item) -> one line per item,
+	-- head to feet, plus whether any of it is real armour.
 	local function armorText(char)
 		local wear = char:FindFirstChild("FustWear")
 		if not wear then
-			return nil
+			return nil, false
 		end
-		local seen, parts = {}, {}
+		local seen, list, armoured = {}, {}, false
 		for _, child in ipairs(wear:GetChildren()) do
 			local id = child:GetAttribute("ItemId")
 			if type(id) == "string" and id ~= "" and not seen[id] then
 				seen[id] = true
-				parts[#parts + 1] = id:gsub("_", " ")
+				local lower = id:lower()
+				for _, w in ipairs(ARMOR_WORDS) do
+					if lower:find(w, 1, true) then
+						armoured = true
+						break
+					end
+				end
+				local slot = tostring(child.Name):match("^(%a+)") or ""
+				list[#list + 1] = { name = titleCase(id), order = SLOT_ORDER[slot:lower()] or 9 }
 			end
 		end
-		if #parts == 0 then
-			return nil
+		if #list == 0 then
+			return nil, false
 		end
-		table.sort(parts)
-		if #parts > 2 then
-			return parts[1] .. " · " .. parts[2] .. " +" .. (#parts - 2)
+		table.sort(list, function(x, y)
+			if x.order ~= y.order then
+				return x.order < y.order
+			end
+			return x.name < y.name
+		end)
+		local names = {}
+		for i = 1, math.min(#list, 3) do
+			names[i] = list[i].name
 		end
-		return table.concat(parts, " · ")
+		local text = table.concat(names, " · ")
+		if #list > 3 then
+			text ..= " +" .. (#list - 3)
+		end
+		return text, armoured
 	end
 
 	local function hpColor(pct)
@@ -786,14 +878,23 @@ return function(deps)
 	end
 
 	local function scan()
+		pcall(scanHits)
 		local myRoot = LOCAL.Character and LOCAL.Character:FindFirstChild("HumanoidRootPart")
 		targets = pickTargets(myRoot and myRoot.Position)
 		for i = 1, #targets do
 			local t = targets[i]
 			t.cache = partsFor(t.char)
 			t.dist = math.sqrt(t.d2)
-			t.held = Esp.held and heldText(t.char) or nil
-			t.armor = Esp.armor and armorText(t.char) or nil
+			if Esp.held then
+				t.held, t.heldClass = heldText(t.char)
+			else
+				t.held, t.heldClass = nil, nil
+			end
+			if Esp.armor then
+				t.armor, t.armoured = armorText(t.char)
+			else
+				t.armor, t.armoured = nil, false
+			end
 		end
 	end
 
@@ -818,6 +919,12 @@ return function(deps)
 			tags[#tags + 1] = "SPRINT"
 		elseif t.crouching then
 			tags[#tags + 1] = "CROUCH"
+		end
+		if t.armoured and Esp.armor then
+			tags[#tags + 1] = "ARMOURED"
+		end
+		if Esp.visTags and Esp.visibleCheck then
+			tags[#tags + 1] = (t.visible ~= false) and "VISIBLE" or "HIDDEN"
 		end
 		return #tags > 0 and table.concat(tags, " · ") or nil
 	end
@@ -858,17 +965,9 @@ return function(deps)
 				else
 					t.text = nil
 				end
-				local sub = {}
-				if Esp.labelStyle ~= "External" then
-					if Esp.held and t.held then
-						sub[#sub + 1] = t.held
-					end
-					if Esp.armor and t.armor then
-						sub[#sub + 1] = t.armor
-					end
-				end
-				t.subText = #sub > 0 and table.concat(sub, "  ·  ") or nil
-				t.tags = Esp.statusTags and statusText(t) or nil
+				t.subText = (Esp.held and t.held) or nil
+				t.armorLine = (Esp.armor and t.armor and t.dist <= 250) and t.armor or nil
+				t.tags = (Esp.statusTags or Esp.visTags) and statusText(t) or nil
 			end
 		end
 	end
@@ -994,6 +1093,125 @@ return function(deps)
 		hideList(s.joints, jointState.used + 1)
 	end
 
+	-- Screen-edge flash while someone is aiming at you (Drawing only): four thin bars that pulse.
+	local flashRecs
+	function drawFlash(vp, on)
+		if not on then
+			if flashRecs then
+				for _, r in ipairs(flashRecs) do
+					setVis(r, false)
+				end
+			end
+			return
+		end
+		if not (Esp.useDrawing and drawingOk()) then
+			return
+		end
+		if not flashRecs then
+			flashRecs = {}
+			for k = 1, 4 do
+				flashRecs[k] = makeDrawSquare()
+			end
+		end
+		local a = 0.25 + 0.2 * math.sin(os.clock() * 12)
+		local w = 6
+		local rects = { { 0, 0, vp.X, w }, { 0, vp.Y - w, vp.X, w }, { 0, 0, w, vp.Y }, { vp.X - w, 0, w, vp.Y } }
+		for k, q in ipairs(rects) do
+			local r = flashRecs[k]
+			r.dsquare.Position = Vector2.new(q[1], q[2])
+			r.dsquare.Size = Vector2.new(q[3], q[4])
+			r.dsquare.Transparency = a
+			setColor(r, Esp.aimWarnColor)
+			setVis(r, true)
+		end
+	end
+
+	-- Hit confirm / kill toasts: stacked under the warning banner, newest on top, fade out.
+	local toasts = {}
+	local toastRecs = {}
+	local TOAST_LIFE = 3.5
+	local function pushToast(text, color)
+		table.insert(toasts, 1, { text = text, color = color, at = os.clock() })
+		for i = #toasts, math.max(Esp.toastMax or 5, 1) + 1, -1 do
+			toasts[i] = nil
+		end
+	end
+	function drawToasts(vp)
+		local now = os.clock()
+		local n = 0
+		for i = 1, #toasts do
+			local e = toasts[i]
+			local age = now - e.at
+			if age < TOAST_LIFE then
+				n += 1
+				local r = toastRecs[n]
+				if not r then
+					r = makeText()
+					if r.dtext then
+						r.dtext.Size = 15
+					elseif r.f then
+						r.f.TextSize = 14
+					end
+					toastRecs[n] = r
+				end
+				setText(r, e.text)
+				setColor(r, e.color)
+				local fadeA = age > TOAST_LIFE - 0.8 and (TOAST_LIFE - age) / 0.8 or 1
+				if r.dtext then
+					r.dtext.Transparency = fadeA
+				elseif r.f then
+					r.f.TextTransparency = 1 - fadeA
+				end
+				textAt(r, vp.X * 0.5, (r.dtext and 118 or 140) + (n - 1) * 18, r.dtext and 15 or 14, 520)
+			end
+		end
+		for i = n + 1, #toastRecs do
+			setVis(toastRecs[i], false)
+		end
+	end
+
+	-- Reads the game's own LastHitById / LastHitAt / Dead on every player (0.25 s).
+	local HIT_COLOR = Color3.fromRGB(255, 235, 140)
+	local KILL_COLOR = Color3.fromRGB(255, 90, 90)
+	local hitSeen = {}
+	function scanHits()
+		if not (Esp.hitLog or Esp.killToast) then
+			return
+		end
+		local myId = LOCAL.UserId
+		local myRoot = LOCAL.Character and LOCAL.Character:FindFirstChild("HumanoidRootPart")
+		for _, plr in ipairs(Players:GetPlayers()) do
+			if plr ~= LOCAL then
+				local st = hitSeen[plr]
+				if not st then
+					st = { at = plr:GetAttribute("LastHitAt"), dead = plr:GetAttribute("Dead") == true }
+					hitSeen[plr] = st
+				else
+					local at = plr:GetAttribute("LastHitAt")
+					local dead = plr:GetAttribute("Dead") == true
+					local byMe = plr:GetAttribute("LastHitById") == myId
+					local char = charOf(plr)
+					local root = char and char:FindFirstChild("HumanoidRootPart")
+					local dist = (myRoot and root) and string.format("%dm", math.floor((root.Position - myRoot.Position).Magnitude + 0.5)) or "?"
+					local weapon = tostring(plr:GetAttribute("LastHitWeapon") or "?")
+					if byMe and dead and not st.dead and Esp.killToast then
+						pushToast(string.format("KILLED %s  -  %s  -  %s", plr.DisplayName, weapon, dist), KILL_COLOR)
+					elseif byMe and at ~= st.at and at ~= nil and not dead and Esp.hitLog then
+						local hum = char and char:FindFirstChildOfClass("Humanoid")
+						local hp = hum and string.format("  -  %d HP left", math.floor(hum.Health + 0.5)) or ""
+						pushToast(string.format("HIT %s  -  %s  -  %s%s", plr.DisplayName, weapon, dist, hp), HIT_COLOR)
+					end
+					st.at, st.dead = at, dead
+				end
+			end
+		end
+		for plr in pairs(hitSeen) do
+			if not plr.Parent then
+				hitSeen[plr] = nil
+			end
+		end
+	end
+
 	local function render()
 		local camera = workspace.CurrentCamera
 		if not camera then
@@ -1001,6 +1219,9 @@ return function(deps)
 		end
 		local vp = camera.ViewportSize
 		local baseColor = Esp.color
+		if Esp.rainbow then
+			baseColor = Color3.fromHSV((os.clock() * (Esp.rainbowSpeed or 0.25)) % 1, 0.65, 1)
+		end
 		local visColor = Esp.visibleColor
 		local checkVis = Esp.visibleCheck
 		local camCF = camera.CFrame
@@ -1022,7 +1243,9 @@ return function(deps)
 			end
 			if not ok then
 				hideSlot(s)
-				if Esp.offscreen and s.arrow and root and root.Parent and t.hum.Health > 0 then
+				local threat = t.aimingAtMe or t.ads or t.heldClass == "gun" or t.heldClass == "bow" or t.heldClass == "explosive"
+				if Esp.offscreen and s.arrow and root and root.Parent and t.hum.Health > 0
+					and (not Esp.arrowsThreatOnly or threat) then
 					local rel = camCF:PointToObjectSpace(root.Position)
 					local dir = Vector2.new(rel.X, rel.Z)
 					if dir.Magnitude > 0.01 then
@@ -1037,7 +1260,7 @@ return function(deps)
 						tri.PointB = base + side
 						tri.PointC = base - side
 						tri.Transparency = math.clamp(1 - (t.dist / math.max(Esp.maxDist, 1)) * 0.6, 0.35, 1)
-						setColor(s.arrow, t.aimingAtMe and Esp.aimWarnColor or baseColor)
+						setColor(s.arrow, t.aimingAtMe and Esp.aimWarnColor or Esp.arrowColor or baseColor)
 						setVis(s.arrow, true)
 					end
 				end
@@ -1095,10 +1318,21 @@ return function(deps)
 
 				if Esp.tracers and s.tracer then
 					local fromX, fromY = vp.X * 0.5, vp.Y
-					local tthick = math.max(Esp.thickness, 1)
-					seg(s.tracer, fromX, fromY, cx, y1, color, tthick)
+					local toY = y1
+					if Esp.tracerOrigin == "Crosshair" then
+						fromY = vp.Y * 0.5
+						toY = (y0 + y1) * 0.5
+					elseif Esp.tracerOrigin == "Top" then
+						fromY = 0
+						toY = y0
+					end
+					local tthick = math.max(Esp.tracerThickness or Esp.thickness, 1)
+					seg(s.tracer, fromX, fromY, cx, toY, color, tthick)
+					if s.tracer.dline then
+						s.tracer.dline.Transparency = Esp.tracerFade and math.clamp(1 - t.dist / math.max(Esp.maxDist, 1), 0.25, 1) or 1
+					end
 					if Esp.outline then
-						seg(s.tracerOut, fromX, fromY, cx, y1, OUTLINE_COLOR, tthick + 1)
+						seg(s.tracerOut, fromX, fromY, cx, toY, OUTLINE_COLOR, tthick + 1)
 					else
 						setVis(s.tracerOut, false)
 					end
@@ -1115,7 +1349,7 @@ return function(deps)
 					hideList(s.joints)
 				end
 
-				if Esp.lookLine and head then
+				if Esp.lookLine and head and (Esp.lookMode ~= "Aiming only" or t.ads) then
 					local hp0 = head.Position
 					local tip = hp0 + head.CFrame.LookVector * (Esp.lookLength or 8)
 					local sa = camera:WorldToViewportPoint(hp0)
@@ -1174,11 +1408,25 @@ return function(deps)
 				if t.subText then
 					local sub = s.heldLabel
 					setText(sub, t.subText)
-					setColor(sub, (Esp.held and t.held) and HELD_COLOR or color)
+					local hc = HELD_COLOR
+					if Esp.heldClassColor and t.heldClass then
+						hc = CLASS_COLOR[t.heldClass] or HELD_COLOR
+					end
+					setColor(sub, hc)
 					textAt(sub, cx, sub.dtext and below or below + 12, 11, 240)
 					below += 13
 				else
 					setVis(s.heldLabel, false)
+				end
+
+				if t.armorLine then
+					local al = s.armorLabel
+					setText(al, t.armorLine)
+					setColor(al, ARMOR_COLOR)
+					textAt(al, cx, al.dtext and below or below + 12, 11, 260)
+					below += 13
+				else
+					setVis(s.armorLabel, false)
 				end
 
 				if t.tags then
@@ -1196,7 +1444,8 @@ return function(deps)
 				hideSlot(slots[i])
 			end
 		end
-		if Esp.aimWarn and #aimersBuf > 0 then
+		local bannerOn = Esp.aimWarnMode ~= "Colour only"
+		if Esp.aimWarn and bannerOn and #aimersBuf > 0 then
 			if not warnRec then
 				warnRec = makeText()
 				if warnRec.dtext then
@@ -1212,6 +1461,8 @@ return function(deps)
 		elseif warnRec then
 			setVis(warnRec, false)
 		end
+		drawFlash(vp, Esp.aimWarn and Esp.aimWarnMode == "Banner + flash" and #aimersBuf > 0)
+		drawToasts(vp)
 	end
 
 	local function stopLoop()
@@ -1236,6 +1487,10 @@ return function(deps)
 				hideAll()
 				if warnRec then
 					setVis(warnRec, false)
+				end
+				drawFlash(nil, false)
+				for _, r in ipairs(toastRecs) do
+					setVis(r, false)
 				end
 				stopLoop()
 				return
@@ -1314,6 +1569,7 @@ return function(deps)
 		removeDrawRec(s.look)
 		removeDrawRec(s.lookOut)
 		removeDrawRec(s.tagLabel)
+		removeDrawRec(s.armorLabel)
 		removeDrawRec(s.arrow)
 		removeDrawRec(s.barBg)
 		removeDrawRec(s.barFill)
@@ -1333,6 +1589,17 @@ return function(deps)
 		if warnRec then
 			removeDrawRec(warnRec)
 			warnRec = nil
+		end
+		for _, r in ipairs(toastRecs) do
+			removeDrawRec(r)
+		end
+		table.clear(toastRecs)
+		table.clear(toasts)
+		if flashRecs then
+			for _, r in ipairs(flashRecs) do
+				removeDrawRec(r)
+			end
+			flashRecs = nil
 		end
 	end
 
