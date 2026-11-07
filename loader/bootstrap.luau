@@ -7,7 +7,7 @@
   Re-run to refresh all modules from GitHub. Update only esp/aim/shell/prism on GitHub independently.
 ]]
 
-local BUNDLE_VERSION = "2.19.0"
+local BUNDLE_VERSION = "2.19.1"
 local CACHE_BUST = tostring(os.clock()):gsub("%.", "")
 
 local MANIFEST_URL = "https://raw.githubusercontent.com/ImWozzie/gangstanigletshit/main/manifest.luau"
@@ -23,9 +23,37 @@ local DEFAULT_MANIFEST = {
 		misc = "modules/fust_misc.luau",
 		exploit = "modules/fust_exploit.luau",
 		presets = "modules/fust_presets.luau",
+		hud = "modules/fust_hud.luau",
 		shell = "modules/fust_shell.luau",
 	},
 }
+
+local function mergeManifest(remote)
+	local out = {
+		repo = DEFAULT_MANIFEST.repo,
+		branch = DEFAULT_MANIFEST.branch,
+		modules = {},
+	}
+	if type(remote) == "table" then
+		if type(remote.repo) == "string" and remote.repo ~= "" then
+			out.repo = remote.repo
+		end
+		if type(remote.branch) == "string" and remote.branch ~= "" then
+			out.branch = remote.branch
+		end
+	end
+	for key, path in pairs(DEFAULT_MANIFEST.modules) do
+		out.modules[key] = path
+	end
+	if type(remote) == "table" and type(remote.modules) == "table" then
+		for key, path in pairs(remote.modules) do
+			if type(path) == "string" and path ~= "" then
+				out.modules[key] = path
+			end
+		end
+	end
+	return out
+end
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -69,7 +97,10 @@ end
 local manifest = DEFAULT_MANIFEST
 local manifestSource = httpGet(MANIFEST_URL .. "?v=" .. BUNDLE_VERSION)
 if manifestSource and not string.find(manifestSource, "404", 1, true) and string.find(manifestSource, "return", 1, true) then
-	manifest = loadChunk(manifestSource, "manifest")
+	local remoteManifest = loadChunk(manifestSource, "manifest")
+	manifest = mergeManifest(remoteManifest)
+else
+	manifest = mergeManifest(nil)
 end
 
 local repo = manifest.repo
@@ -103,6 +134,8 @@ local aimFactory = loadModule(repo, branch, paths.aim, "aim")
 local worldFactory = paths.world and loadModule(repo, branch, paths.world, "world") or nil
 local miscFactory = paths.misc and loadModule(repo, branch, paths.misc, "misc") or nil
 local exploitFactory = paths.exploit and loadModule(repo, branch, paths.exploit, "exploit") or nil
+local presetsFactory = paths.presets and loadModule(repo, branch, paths.presets, "presets") or nil
+local hudFactory = paths.hud and loadModule(repo, branch, paths.hud, "hud") or nil
 local shellFactory = loadModule(repo, branch, paths.shell, "shell")
 
 local Esp = espFactory(deps)
@@ -124,9 +157,12 @@ local Exploit = exploitFactory and exploitFactory(deps)
 	or { destroy = function() end, syncHook = function() end, applyExternalExploitPreset = function() end }
 deps.Exploit = Exploit
 
-local presetsFactory = paths.presets and loadModule(repo, branch, paths.presets, "presets") or nil
 local Presets = presetsFactory and presetsFactory(deps) or { applyExternalFull = function() end }
 deps.Presets = Presets
+
+local Hud = hudFactory and hudFactory(deps)
+	or { destroy = function() end, setRadar = function() end, setStaff = function() end }
+deps.Hud = Hud
 
 local bundle = shellFactory(deps)
 
@@ -137,10 +173,24 @@ env.__FustWorld = World
 env.__FustMisc = Misc
 env.__FustExploit = Exploit
 env.__FustPresets = Presets
+env.__FustHud = Hud
 env.__FustBundle = bundle
 env.__FustManifest = manifest
 env.__FustBundleVersion = BUNDLE_VERSION
 
-print("[FustBundle] loaded aimbot " .. BUNDLE_VERSION .. " (GitHub " .. branch .. ")")
+local moduleLog = {}
+for name, path in pairs(paths) do
+	if type(path) == "string" then
+		table.insert(moduleLog, name)
+	end
+end
+table.sort(moduleLog)
+print("[FustBundle] loaded " .. BUNDLE_VERSION .. " (GitHub " .. branch .. ") modules: " .. table.concat(moduleLog, ", "))
+if not exploitFactory then
+	warn("[FustBundle] exploit module missing from manifest — using stub")
+end
+if not presetsFactory then
+	warn("[FustBundle] presets module missing from manifest — using stub")
+end
 
 return bundle

@@ -7,7 +7,8 @@ return function(deps)
 	local Misc = deps.Misc
 	local Exploit = deps.Exploit
 	local Presets = deps.Presets
-	local bundleVersion = deps.BundleVersion or "2.19.0"
+	local Hud = deps.Hud
+	local bundleVersion = deps.BundleVersion or "2.19.1"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false
@@ -2388,6 +2389,9 @@ return function(deps)
 	function bundle.destroy()
 		if Exploit then
 			Exploit:destroy()
+		end
+		if Hud and Hud.destroy then
+			Hud:destroy()
 		end
 		Aim:destroy()
 		Esp:destroy()
