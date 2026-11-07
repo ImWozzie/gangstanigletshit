@@ -177,7 +177,7 @@ dir = LookVector
 
 Early Sande rewrote `origin` to a **frozen HRP position** while the player kept moving (dir toward aim bone). That is a ghost muzzle — server origin vs live camera/character mismatch. Treat as Multihack/Cheating class, same family as aim snap + thick silent stacks.
 
-**Safe Sande (v2.23.1+):** timed window, ScreenGui FX only, **dir-only** silent, origin = live `cam + look * MUZZLE`. No frozen origin, no wallManip forced on, no Camera ColorCorrection/Blur (FustSky ACM owns Lighting grades / `{ lt }` MotionSync). Cap duration ≤ 8s.
+**Safe Sande (v2.24.0+):** pin **body** at activate CFrame (Heartbeat velocity zero). **Freecam** aims (World pattern: overwrite `Camera.CFrame`, keep Custom + Humanoid subject). `Aim.pickTarget` uses freecam FOV. Shoot origin = pinned body + wall peek along dir (True silent + Wall manip). On stop, freecam ends — body never left. Cap duration ≤ **2.8s** (`FustFirstPerson` MotionSync `{tp,cm}` after ~3s of cam–Head distance > 3.5). ScreenGui FX only.
 
 ---
 

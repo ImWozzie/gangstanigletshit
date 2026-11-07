@@ -9,7 +9,7 @@ return function(deps)
 	local Exploit = deps.Exploit
 	local Sande = deps.Sande
 	local Presets = deps.Presets
-	local bundleVersion = deps.BundleVersion or "2.23.1"
+	local bundleVersion = deps.BundleVersion or "2.24.0"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false
@@ -636,7 +636,7 @@ return function(deps)
 	end
 
 	local sandeSec = aimTab:Section({ Name = "Sandevistan", Icon = "zap", Side = "Right" })
-	sandeSec:Label("Timed window. Free move. Dir-only silent (live muzzle origin). No frozen origin — that bans.")
+	sandeSec:Label("Pin body → freecam aim (WASD/E/Space/Ctrl) → shots from body + wall peek. Max 2.8s (MotionSync).")
 	if Sande then
 		sandeSec:Toggle({
 			Name = "Enabled",
@@ -656,7 +656,7 @@ return function(deps)
 			Risky = true,
 			Flag = "Fust_SandeKey",
 			Mode = "Toggle",
-			Keybind = Enum.KeyCode.Q,
+			Keybind = Enum.KeyCode.V,
 			DependsOn = "Fust_SandeOn",
 			Callback = function(v)
 				if v then
@@ -674,13 +674,40 @@ return function(deps)
 		sandeSec:Slider({
 			Name = "Duration (s)",
 			Min = 0.5,
-			Max = 8,
+			Max = 2.8,
 			Default = 2.5,
-			Increment = 0.25,
+			Increment = 0.1,
 			Flag = "Fust_SandeDur",
 			DependsOn = "Fust_SandeOn",
 			Callback = function(v)
 				Sande.duration = v
+			end,
+		})
+		sandeSec:Slider({
+			Name = "Freecam speed",
+			Min = 0.4,
+			Max = 2.5,
+			Default = 1.2,
+			Increment = 0.1,
+			Flag = "Fust_SandeFcSpeed",
+			DependsOn = "Fust_SandeOn",
+			Callback = function(v)
+				Sande.freecamSpeed = v
+			end,
+		})
+		sandeSec:Slider({
+			Name = "Wall peek studs",
+			Min = 1,
+			Max = 12,
+			Default = 5,
+			Increment = 0.5,
+			Flag = "Fust_SandePeek",
+			DependsOn = "Fust_SandeOn",
+			Callback = function(v)
+				Sande.wallPeekStuds = v
+				if Exploit and Sande.active then
+					Exploit.wallManipStuds = v
+				end
 			end,
 		})
 		sandeSec:Slider({
@@ -696,7 +723,7 @@ return function(deps)
 			end,
 		})
 		sandeSec:Toggle({
-			Name = "Auto true silent while active",
+			Name = "Auto silent + wall peek",
 			Default = true,
 			Risky = true,
 			Flag = "Fust_SandeSilent",

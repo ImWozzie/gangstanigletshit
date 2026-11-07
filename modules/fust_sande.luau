@@ -1,24 +1,34 @@
--- Sandevistan window: keybind + duration, free move, timed dir-only silent.
--- AC note (live FustCombat): Shoot.origin = cam.Position + LookVector * MUZZLE.
--- Freezing origin at HRP after you walk away is a server Multihack/Cheating vector — do not do that.
--- Combat path: rewrite Shoot.dir toward aim bone only; origin stays live muzzle.
--- FX: ScreenGui only (vignette / split / streaks / timer). No Camera ColorCorrection/Blur, no Lighting.
+-- Sandevistan: pin real body at activate, freecam for aim FOV, Shoot from pinned body (+ wall peek).
+-- On disable: freecam ends; body never left the activate CFrame.
+-- AC: FustFirstPerson MotionSync {tp,cm} if cam stays >3.5 studs from Head for ~3s — duration ≤ 2.8s.
+-- Keep CameraType Custom + CameraSubject Humanoid (World freecam pattern). No Lighting paints.
+-- FX: ScreenGui only.
 return function(deps)
 	local Players = deps.Players
 	local RunService = deps.RunService
+	local UserInputService = deps.UserInputService
 	local LOCAL = deps.LocalPlayer
 	local Aim = deps.Aim
 	local Exploit = deps.Exploit
 
+	local MUZZLE_HEIGHT = 1.35
+	local MAX_SAFE_DURATION = 2.8
+
 	local Sande = {
 		enabled = false,
-		duration = 3,
+		duration = 2.5,
 		key = Enum.KeyCode.Q,
 		active = false,
 		endsAt = 0,
 		fxStrength = 1,
-		-- Timed dir rewrite only (safe). Do not enable wallManip / frozen origin.
 		autoSilent = true,
+		freecamSpeed = 1.2,
+		wallPeekStuds = 5,
+		frozenCF = nil,
+		_bodyPos = nil,
+		_fcPos = nil,
+		_pinConn = nil,
+		_fcConn = nil,
 		_conn = nil,
 		_gui = nil,
 		_status = nil,
@@ -310,15 +320,99 @@ return function(deps)
 		end)
 	end
 
+	local function stopPin()
+		if Sande._pinConn then
+			Sande._pinConn:Disconnect()
+			Sande._pinConn = nil
+		end
+	end
+
+	local function stopFreecam()
+		if Sande._fcConn then
+			Sande._fcConn:Disconnect()
+			Sande._fcConn = nil
+		end
+		Sande._fcPos = nil
+	end
+
+	local function startPin(cf)
+		stopPin()
+		Sande.frozenCF = cf
+		Sande._bodyPos = cf.Position + Vector3.new(0, MUZZLE_HEIGHT, 0)
+		Sande._pinConn = RunService.Heartbeat:Connect(function()
+			if not Sande.active or not Sande.frozenCF then
+				return
+			end
+			local root = hrp()
+			if not root then
+				return
+			end
+			root.CFrame = Sande.frozenCF
+			root.AssemblyLinearVelocity = Vector3.zero
+			root.AssemblyAngularVelocity = Vector3.zero
+			if Exploit then
+				Exploit.sandeBodyPos = Sande._bodyPos
+			end
+		end)
+	end
+
+	local function startFreecam()
+		stopFreecam()
+		local cam = workspace.CurrentCamera
+		if not cam then
+			return
+		end
+		-- Same pattern as World freecam: overwrite CFrame, keep Custom + Humanoid subject.
+		Sande._fcPos = cam.CFrame
+		Sande._fcConn = RunService.RenderStepped:Connect(function(dt)
+			if not Sande.active then
+				return
+			end
+			cam = workspace.CurrentCamera
+			if not cam or not Sande._fcPos then
+				return
+			end
+			local speed = 40 * (Sande.freecamSpeed or 1.2)
+			local move = Vector3.zero
+			if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+				move += cam.CFrame.LookVector
+			end
+			if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+				move -= cam.CFrame.LookVector
+			end
+			if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+				move -= cam.CFrame.RightVector
+			end
+			if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+				move += cam.CFrame.RightVector
+			end
+			if UserInputService:IsKeyDown(Enum.KeyCode.E) or UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+				move += Vector3.yAxis
+			end
+			-- LeftControl for down — Q is often the activate keybind.
+			if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
+				move -= Vector3.yAxis
+			end
+			if move.Magnitude > 0 then
+				Sande._fcPos = Sande._fcPos + move.Unit * speed * dt
+			end
+			local look = cam.CFrame.LookVector
+			local pos = Sande._fcPos.Position
+			cam.CFrame = CFrame.new(pos, pos + look)
+		end)
+	end
+
 	local function pushExploit(active)
 		if not Exploit then
 			return
 		end
 		Exploit.sandeActive = active
-		-- Never force wallManip / frozen origin. Dir-only while window is open.
+		Exploit.sandeBodyPos = active and Sande._bodyPos or nil
 		if active and Sande.autoSilent then
 			Exploit.trueSilent = true
-			Exploit.wallManip = false
+			-- Peek from pinned body so shots clear rock/wall in front of the ghost.
+			Exploit.wallManip = true
+			Exploit.wallManipStuds = math.clamp(Sande.wallPeekStuds or 5, 1, 12)
 		end
 		if Exploit.syncHook then
 			Exploit:syncHook()
@@ -328,6 +422,20 @@ return function(deps)
 	function Sande:stop()
 		self.active = false
 		self.endsAt = 0
+		stopFreecam()
+		-- One last pin write so you "return" to the activate spot, then release.
+		local cf = self.frozenCF
+		local root = hrp()
+		if root and cf then
+			pcall(function()
+				root.CFrame = cf
+				root.AssemblyLinearVelocity = Vector3.zero
+				root.AssemblyAngularVelocity = Vector3.zero
+			end)
+		end
+		stopPin()
+		self.frozenCF = nil
+		self._bodyPos = nil
 		clearFx()
 		pushExploit(false)
 		if self._conn then
@@ -340,16 +448,19 @@ return function(deps)
 		if not self.enabled then
 			return false
 		end
-		if not hrp() then
+		local root = hrp()
+		if not root then
 			return false
 		end
 		if self.active then
 			self:stop()
 		end
 
+		local cam = workspace.CurrentCamera
 		self.active = true
-		-- Cap hard: long windows with silent dir rewrite look like sustained aimbot to staff.
-		self.endsAt = tick() + math.clamp(self.duration or 2.5, 0.25, 8)
+		self.endsAt = tick() + math.clamp(self.duration or 2.5, 0.25, MAX_SAFE_DURATION)
+		startPin(root.CFrame)
+		startFreecam()
 		buildFx(self.fxStrength)
 		pushExploit(true)
 
