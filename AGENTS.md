@@ -20,7 +20,7 @@ Design goal: **feature parity with external.wtf-class menus** (Drawing ESP/FOV, 
 | `modules/fust_esp.luau` | Player ESP — **Drawing** primary, PlayerGui fallback |
 | `modules/fust_aim.luau` | Aimbot, hitscan/manip HUD, combat tracers, **Drawing FOV** |
 | `modules/fust_world.luau` | World ESP (PlayerGui), custom lighting, freecam/tp3/zoom |
-| `modules/fust_misc.luau` | No recoil/spread, gun auto/rapid, hitbox, speed, **noclip**, farm/kill |
+| `modules/fust_misc.luau` | No recoil/spread (filtergc gun table), gun auto/rapid, hitbox, speed, farm/kill |
 | `modules/fust_exploit.luau` | **True silent** (`Shoot` dir/origin), wall manip, `Swing` redirect (`__namecall`) |
 | `modules/fust_presets.luau` | `Presets:applyExternalFull()` — one-shot external stack |
 | `modules/fust_shell.luau` | **UI only** — wires modules, panic, configs |
@@ -99,6 +99,12 @@ These are **off limits** when scripting against the live game. Violating them br
 - **`labelStyle "External"`**: `80MC (@user) - W [114.2m]` style (money from leaderstats/attributes).  
 - Corner length **8px**, fill **0.14**, pink default color.  
 - PlayerGui fallback if no Drawing. No highlights on enemy rigs.
+- **Loop:** `RunService:BindToRenderStep("FustEspRender", Camera + 1)` — drawn right after the camera moves, every frame when `rate >= 60` (default). Three timers inside it:
+  - **scan** 0.25 s — targets, part cache, held/armour text
+  - **info** 0.1 s — labels, visibility raycast, `LookAds` / `GunReload` / `Sprinting` / `Crouching`, aimed-at check
+  - **render** — positions only; reads cached results (no raycasts or string building per frame)
+- **Awareness:** facing line (head `LookVector` × `lookLength`), status tags, aimed-at warning (ADS + head look within `aimCone`° of you → red box + screen banner), off-screen arrows (Drawing `Triangle`, `offscreenRadius`)
+- Health bar is a Drawing `Square` in Drawing mode (was a Frame with no ScreenGui, so it never showed)
 
 ### Aim (`fust_aim.luau`)
 
@@ -153,4 +159,4 @@ Commit only when user asks. Use per-commit `-c user.name=ImWozzie -c user.email=
 - [ ] `BUNDLE_VERSION` bumped  
 - [ ] Copy to push repo + push when requested  
 
-Last aligned: **v2.16.0** — Drawing ESP/FOV, external presets, exploit stack.
+Last aligned: **v2.17.0** — Drawing ESP/FOV, external presets, exploit stack.

@@ -7,7 +7,7 @@ return function(deps)
 	local Misc = deps.Misc
 	local Exploit = deps.Exploit
 	local Presets = deps.Presets
-	local bundleVersion = deps.BundleVersion or "2.16.3"
+	local bundleVersion = deps.BundleVersion or "2.17.0"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false
@@ -884,13 +884,116 @@ return function(deps)
 	})
 	rangeSec:Slider({
 		Name = "ESP FPS",
+		Description = "60 = every frame, synced to the camera (smoothest)",
 		Min = 5,
 		Max = 60,
-		Default = 30,
-		Increment = 1,
+		Default = 60,
+		Increment =  5,
 		Flag = "Fust_EspRate",
 		Callback = function(v)
 			Esp.rate = v
+		end,
+	})
+
+	local awareSec = visTab:Section({ Name = "Awareness", Icon = "crosshair", Side = "Right" })
+	awareSec:Toggle({
+		Name = "Facing line",
+		Description = "Line from the head showing where they look",
+		Default = true,
+		Flag = "Fust_EspLook",
+		Callback = function(v)
+			Esp.lookLine = v
+		end,
+	})
+	awareSec:Slider({
+		Name = "Facing line length",
+		Min = 3,
+		Max = 40,
+		Default = 8,
+		Increment = 1,
+		Flag = "Fust_EspLookLen",
+		DependsOn = "Fust_EspLook",
+		Callback = function(v)
+			Esp.lookLength = v
+		end,
+	})
+	awareSec:ColorPicker({
+		Name = "Facing line colour",
+		Default = Color3.fromRGB(255, 220, 120),
+		Flag = "Fust_EspLookCol",
+		DependsOn = "Fust_EspLook",
+		Callback = function(c)
+			Esp.lookColor = c
+		end,
+	})
+	awareSec:Toggle({
+		Name = "Status tags",
+		Description = "ADS, reloading, sprinting, crouching",
+		Default = true,
+		Flag = "Fust_EspTags",
+		Callback = function(v)
+			Esp.statusTags = v
+		end,
+	})
+	awareSec:ColorPicker({
+		Name = "Aiming-in colour",
+		Default = Color3.fromRGB(255, 170, 60),
+		Flag = "Fust_EspAdsCol",
+		DependsOn = "Fust_EspTags",
+		Callback = function(c)
+			Esp.adsColor = c
+		end,
+	})
+	awareSec:Toggle({
+		Name = "Aimed-at warning",
+		Description = "Red box + screen warning when someone aims in at you",
+		Default = true,
+		Flag = "Fust_EspAimWarn",
+		Callback = function(v)
+			Esp.aimWarn = v
+		end,
+	})
+	awareSec:Slider({
+		Name = "Warning cone",
+		Description = "How close to you their aim must be (degrees)",
+		Min = 2,
+		Max = 25,
+		Default = 8,
+		Increment = 1,
+		Flag = "Fust_EspAimCone",
+		DependsOn = "Fust_EspAimWarn",
+		Callback = function(v)
+			Esp.aimCone = v
+		end,
+	})
+	awareSec:ColorPicker({
+		Name = "Warning colour",
+		Default = Color3.fromRGB(255, 60, 60),
+		Flag = "Fust_EspAimWarnCol",
+		DependsOn = "Fust_EspAimWarn",
+		Callback = function(c)
+			Esp.aimWarnColor = c
+		end,
+	})
+	awareSec:Toggle({
+		Name = "Off-screen arrows",
+		Description = "Arrows toward players outside your view (Drawing mode)",
+		Default = true,
+		Flag = "Fust_EspArrows",
+		Callback = function(v)
+			Esp.offscreen = v
+		end,
+	})
+	awareSec:Slider({
+		Name = "Arrow radius",
+		Min = 80,
+		Max = 400,
+		Default = 220,
+		Increment = 10,
+		Flag = "Fust_EspArrowRad",
+		DependsOn = "Fust_EspArrows",
+		Callback = function(v)
+			Esp.offscreenRadius = v
 		end,
 	})
 
