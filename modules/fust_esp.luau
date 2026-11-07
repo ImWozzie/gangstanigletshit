@@ -1,6 +1,4 @@
--- Fust ESP module (PlayerGui overlays). Returns factory(deps) -> Esp
--- Frames only (no Drawing), nothing parented to other characters. One Heartbeat: a slow scan
--- (targets + part cache) and a render pass at Esp.rate; frame properties are written only on change.
+-- Fust ESP — external.wtf-style Drawing when available; PlayerGui fallback.
 return function(deps)
 	local Players = deps.Players
 	local RunService = deps.RunService
@@ -67,13 +65,20 @@ return function(deps)
 	local MAX_BONES = #R15_BONES
 	local MAX_JOINTS = 16
 
+	local function drawingOk()
+		return type(Drawing) == "table" and type(Drawing.new) == "function"
+	end
+
 	local Esp = {
 		master = false,
 		maxDist = 2500,
 		maxTargets = 12,
 		rate = 30,
+		useDrawing = drawingOk(),
+		labelStyle = "External",
+		cornerLength = 8,
 		box = true,
-		boxStyle = "Full",
+		boxStyle = "Corners",
 		boxFill = false,
 		boxFillAlpha = 0.14,
 		cornerScale = 0.28,
@@ -92,7 +97,7 @@ return function(deps)
 		healthBar = true,
 		healthBarMaxDist = 50,
 		healthText = false,
-		color = Color3.fromRGB(235, 235, 235),
+		color = Color3.fromRGB(255, 120, 200),
 		visibleCheck = false,
 		visibleColor = Color3.fromRGB(152, 255, 200), -- mint
 		thickness = 1.5,
@@ -123,6 +128,37 @@ return function(deps)
 	end
 
 	local function setVis(r, v)
+		if not r then
+			return
+		end
+		if r.dline then
+			if r.vis ~= v then
+				r.vis = v
+				r.dline.Visible = v
+			end
+			return
+		end
+		if r.dsquare then
+			if r.vis ~= v then
+				r.vis = v
+				r.dsquare.Visible = v
+			end
+			return
+		end
+		if r.dtext then
+			if r.vis ~= v then
+				r.vis = v
+				r.dtext.Visible = v
+			end
+			return
+		end
+		if r.dcircle then
+			if r.vis ~= v then
+				r.vis = v
+				r.dcircle.Visible = v
+			end
+			return
+		end
 		if r.vis ~= v then
 			r.vis = v
 			r.f.Visible = v
@@ -130,6 +166,37 @@ return function(deps)
 	end
 
 	local function setColor(r, c)
+		if not r then
+			return
+		end
+		if r.dline then
+			if r.col ~= c then
+				r.col = c
+				r.dline.Color = c
+			end
+			return
+		end
+		if r.dsquare then
+			if r.col ~= c then
+				r.col = c
+				r.dsquare.Color = c
+			end
+			return
+		end
+		if r.dtext then
+			if r.col ~= c then
+				r.col = c
+				r.dtext.Color = c
+			end
+			return
+		end
+		if r.dcircle then
+			if r.col ~= c then
+				r.col = c
+				r.dcircle.Color = c
+			end
+			return
+		end
 		if r.col ~= c then
 			r.col = c
 			r.f.BackgroundColor3 = c
@@ -169,7 +236,50 @@ return function(deps)
 		return newRec(f)
 	end
 
+	local function makeDrawLine()
+		local l = Drawing.new("Line")
+		l.Visible = false
+		l.Thickness = 1
+		return { dline = l, vis = false }
+	end
+
+	local function makeDrawSquare()
+		local s = Drawing.new("Square")
+		s.Visible = false
+		s.Filled = true
+		s.Thickness = 0
+		return { dsquare = s, vis = false }
+	end
+
+	local function makeDrawText()
+		local t = Drawing.new("Text")
+		t.Visible = false
+		t.Center = true
+		t.Outline = true
+		t.Size = 14
+		t.Font = Drawing.Fonts and Drawing.Fonts.UI or 2
+		return { dtext = t, vis = false }
+	end
+
+	local function makeDrawDot()
+		local c = Drawing.new("Circle")
+		c.Visible = false
+		c.Filled = true
+		c.NumSides = 12
+		return { dcircle = c, vis = false }
+	end
+
+	local function makeSeg(z)
+		if Esp.useDrawing and drawingOk() then
+			return makeDrawLine()
+		end
+		return makeFrame(z)
+	end
+
 	local function makeText()
+		if Esp.useDrawing and drawingOk() then
+			return makeDrawText()
+		end
 		local t = Instance.new("TextLabel")
 		t.AnchorPoint = Vector2.new(0.5, 1)
 		t.BackgroundTransparency = 1
@@ -195,25 +305,36 @@ return function(deps)
 		for k = 1, 8 do
 			s.segs[k] = { 0, 0, 0, 0 }
 		end
-		s.boxFill = makeFrame(2)
-		s.boxFill.f.BackgroundTransparency = 1 - Esp.boxFillAlpha
-		s.boxFill.f.AnchorPoint = Vector2.new(0.5, 0.5)
-		s.boxFill.f.ZIndex = 2
-		s.tracer = makeFrame(3)
-		s.tracerOut = makeFrame(1)
-		s.tracerOut.f.BackgroundTransparency = 0.5
+		if Esp.useDrawing and drawingOk() then
+			s.boxFill = makeDrawSquare()
+			s.boxFill.dsquare.Transparency = 1 - Esp.boxFillAlpha
+		else
+			s.boxFill = makeFrame(2)
+			s.boxFill.f.BackgroundTransparency = 1 - Esp.boxFillAlpha
+			s.boxFill.f.AnchorPoint = Vector2.new(0.5, 0.5)
+			s.boxFill.f.ZIndex = 2
+		end
+		s.tracer = makeSeg(3)
+		s.tracerOut = makeSeg(1)
+		if s.tracerOut.f then
+			s.tracerOut.f.BackgroundTransparency = 0.5
+		end
 		for k = 1, 8 do
-			s.boxOut[k] = makeFrame(1)
-			s.box[k] = makeFrame(3)
-			s.boxOut[k].f.BackgroundTransparency = 0.45
+			s.boxOut[k] = makeSeg(1)
+			s.box[k] = makeSeg(3)
+			if s.boxOut[k].f then
+				s.boxOut[k].f.BackgroundTransparency = 0.45
+			end
 		end
 		for k = 1, MAX_BONES do
-			s.boneOut[k] = makeFrame(1)
-			s.boneOut[k].f.BackgroundTransparency = 0.55
-			s.bones[k] = makeFrame(3)
+			s.boneOut[k] = makeSeg(1)
+			if s.boneOut[k].f then
+				s.boneOut[k].f.BackgroundTransparency = 0.55
+			end
+			s.bones[k] = makeSeg(3)
 		end
 		for k = 1, MAX_JOINTS do
-			s.joints[k] = makeFrame(4, true)
+			s.joints[k] = Esp.useDrawing and drawingOk() and makeDrawDot() or makeFrame(4, true)
 		end
 		s.barBg = makeFrame(2)
 		s.barBg.f.AnchorPoint = Vector2.new(0, 0)
@@ -222,7 +343,11 @@ return function(deps)
 		s.barFill.f.AnchorPoint = Vector2.new(0, 1)
 		s.label = makeText()
 		s.heldLabel = makeText()
-		s.heldLabel.f.TextSize = 11
+		if s.heldLabel.f then
+			s.heldLabel.f.TextSize = 11
+		elseif s.heldLabel.dtext then
+			s.heldLabel.dtext.Size = 11
+		end
 		slots[i] = s
 		return s
 	end
@@ -268,6 +393,14 @@ return function(deps)
 			setVis(r, false)
 			return
 		end
+		if r.dline then
+			r.dline.From = Vector2.new(ax, ay)
+			r.dline.To = Vector2.new(bx, by)
+			r.dline.Thickness = thick
+			setColor(r, color)
+			setVis(r, true)
+			return
+		end
 		setColor(r, color)
 		setRect(r, (ax + bx) * 0.5, (ay + by) * 0.5, len + thick, thick)
 		setRot(r, math.deg(math.atan2(dy, dx)))
@@ -275,9 +408,65 @@ return function(deps)
 	end
 
 	local function dot(r, x, y, size, color)
+		if r.dcircle then
+			r.dcircle.Position = Vector2.new(x, y)
+			r.dcircle.Radius = math.max(size * 0.5, 1.5)
+			setColor(r, color)
+			setVis(r, true)
+			return
+		end
 		setColor(r, color)
 		setRect(r, x, y, size, size)
 		setVis(r, true)
+	end
+
+	local function playerMoneyLabel(plr)
+		local ls = plr:FindFirstChild("leaderstats")
+		if ls then
+			for _, ch in ipairs(ls:GetChildren()) do
+				if ch:IsA("NumberValue") or ch:IsA("IntValue") then
+					local tag = ch.Name:gsub("%s+", "")
+					if #tag > 3 then
+						tag = tag:sub(1, 3)
+					end
+					return string.format("%d%s", math.floor(ch.Value + 0.5), tag)
+				end
+			end
+		end
+		for _, key in ipairs({ "Money", "MC", "Balance", "Credits" }) do
+			local v = plr:GetAttribute(key)
+			if v ~= nil then
+				return tostring(v) .. (key == "MC" and "MC" or "MC")
+			end
+		end
+		return "?"
+	end
+
+	local function formatEspLabel(t)
+		if Esp.labelStyle == "External" then
+			local plr = t.plr
+			local mc = playerMoneyLabel(plr)
+			local w = "-"
+			if t.held and #t.held > 0 then
+				w = t.held:sub(1, 1):upper()
+			end
+			local line = string.format("%s (@%s) - %s [%.1fm]", mc, plr.Name, w, t.dist)
+			if Esp.healthText then
+				line = line .. string.format("  %.0fHP", t.hum.Health)
+			end
+			return line
+		end
+		local chunks = {}
+		if Esp.name then
+			chunks[#chunks + 1] = t.plr.DisplayName
+		end
+		if Esp.distance then
+			chunks[#chunks + 1] = string.format("%dm", math.floor(t.dist + 0.5))
+		end
+		if Esp.healthText then
+			chunks[#chunks + 1] = string.format("%.0f/%.0f", t.hum.Health, t.hum.MaxHealth)
+		end
+		return table.concat(chunks, "  ·  ")
 	end
 
 	-- Resolve character: Player.Character, else workspace.<Name> (Fust places rigs there).
@@ -498,8 +687,14 @@ return function(deps)
 		local q = s.segs
 		local n
 		if Esp.boxStyle == "Corners" then
-			local scale = math.clamp(Esp.cornerScale or 0.28, 0.12, 0.45)
-			local cw, ch = (x1 - x0) * scale, (y1 - y0) * (scale * 0.78)
+			local cw, ch
+			if Esp.cornerLength and Esp.cornerLength > 0 then
+				cw = math.min(Esp.cornerLength, (x1 - x0) * 0.5)
+				ch = math.min(Esp.cornerLength, (y1 - y0) * 0.5)
+			else
+				local scale = math.clamp(Esp.cornerScale or 0.28, 0.12, 0.45)
+				cw, ch = (x1 - x0) * scale, (y1 - y0) * (scale * 0.78)
+			end
 			setSeg(q[1], x0, y0, x0 + cw, y0)
 			setSeg(q[2], x0, y0, x0, y0 + ch)
 			setSeg(q[3], x1, y0, x1 - cw, y0)
@@ -653,9 +848,17 @@ return function(deps)
 				if Esp.box then
 					if Esp.boxFill and s.boxFill then
 						setColor(s.boxFill, color)
-						s.boxFill.f.BackgroundTransparency = 1 - (Esp.boxFillAlpha or 0.14) * fade
-						setRect(s.boxFill, (x0 + x1) * 0.5, (y0 + y1) * 0.5, x1 - x0, y1 - y0)
-						setVis(s.boxFill, true)
+						local fillA = 1 - (Esp.boxFillAlpha or 0.14) * fade
+						if s.boxFill.dsquare then
+							s.boxFill.dsquare.Position = Vector2.new(x0, y0)
+							s.boxFill.dsquare.Size = Vector2.new(x1 - x0, y1 - y0)
+							s.boxFill.dsquare.Transparency = fillA
+							setVis(s.boxFill, true)
+						else
+							s.boxFill.f.BackgroundTransparency = fillA
+							setRect(s.boxFill, (x0 + x1) * 0.5, (y0 + y1) * 0.5, x1 - x0, y1 - y0)
+							setVis(s.boxFill, true)
+						end
 					elseif s.boxFill then
 						setVis(s.boxFill, false)
 					end
@@ -706,67 +909,74 @@ return function(deps)
 					setVis(s.barFill, false)
 				end
 
-				if Esp.name or Esp.distance or Esp.healthText then
-					local key = (Esp.name and t.plr.DisplayName or "") .. "|"
-						.. (Esp.distance and math.floor(t.dist + 0.5) or "") .. "|"
-						.. (Esp.healthText and math.floor(t.hum.Health + 0.5) or "")
+				if Esp.name or Esp.distance or Esp.healthText or Esp.held then
+					local text = formatEspLabel(t)
+					local key = text .. "|" .. tostring(fade)
 					local lab = s.label
 					if lab.key ~= key then
 						lab.key = key
-						local chunks = {}
-						if Esp.name then
-							chunks[#chunks + 1] = t.plr.DisplayName
+						if lab.dtext then
+							lab.dtext.Text = text
+						elseif lab.f then
+							lab.f.Text = text
 						end
-						if Esp.distance then
-							chunks[#chunks + 1] = string.format("%dm", math.floor(t.dist + 0.5))
+					end
+					setColor(lab, color)
+					if lab.dtext then
+						lab.dtext.Position = Vector2.new(cx, y0 - 6)
+						lab.dtext.Size = t.dist > 600 and 12 or 14
+						lab.dtext.Transparency = 0.35 + (1 - fade) * 0.45
+						setVis(lab, true)
+					elseif lab.f then
+						local tTrans = 0.35 + (1 - fade) * 0.45
+						if lab.tt ~= tTrans then
+							lab.tt = tTrans
+							lab.f.TextTransparency = tTrans
 						end
-						if Esp.healthText then
-							chunks[#chunks + 1] = string.format("%.0f/%.0f", t.hum.Health, t.hum.MaxHealth)
+						local size = t.dist > 600 and 12 or 13
+						if lab.ts ~= size then
+							lab.ts = size
+							lab.f.TextSize = size
 						end
-						lab.f.Text = table.concat(chunks, "  ·  ")
+						setRect(lab, cx, y0 - 4, 220, 16)
+						setVis(lab, true)
 					end
-					if lab.col ~= color then
-						lab.col = color
-						lab.f.TextColor3 = color
-					end
-					local tTrans = 0.35 + (1 - fade) * 0.45
-					if lab.tt ~= tTrans then
-						lab.tt = tTrans
-						lab.f.TextTransparency = tTrans
-					end
-					local size = t.dist > 600 and 12 or 13
-					if lab.ts ~= size then
-						lab.ts = size
-						lab.f.TextSize = size
-					end
-					setRect(lab, cx, y0 - 4, 220, 16)
-					setVis(lab, true)
 				else
 					setVis(s.label, false)
 				end
 
-				-- Held weapon / armour under the box (from Tool + FustWear — no module require).
-				local subChunks = {}
-				if Esp.held and t.held then
-					subChunks[#subChunks + 1] = t.held
-				end
-				if Esp.armor and t.armor then
-					subChunks[#subChunks + 1] = t.armor
-				end
-				if #subChunks > 0 then
-					local sub = s.heldLabel
-					local subKey = table.concat(subChunks, "|")
-					if sub.key ~= subKey then
-						sub.key = subKey
-						sub.f.Text = table.concat(subChunks, "  ·  ")
+				if Esp.labelStyle ~= "External" then
+					local subChunks = {}
+					if Esp.held and t.held then
+						subChunks[#subChunks + 1] = t.held
 					end
-					local subCol = (Esp.held and t.held) and HELD_COLOR or color
-					if sub.col ~= subCol then
-						sub.col = subCol
-						sub.f.TextColor3 = subCol
+					if Esp.armor and t.armor then
+						subChunks[#subChunks + 1] = t.armor
 					end
-					setRect(sub, cx, y1 + 2, 240, 14)
-					setVis(sub, true)
+					if #subChunks > 0 then
+						local sub = s.heldLabel
+						local subKey = table.concat(subChunks, "|")
+						if sub.key ~= subKey then
+							sub.key = subKey
+							if sub.dtext then
+								sub.dtext.Text = table.concat(subChunks, "  ·  ")
+							elseif sub.f then
+								sub.f.Text = table.concat(subChunks, "  ·  ")
+							end
+						end
+						local subCol = (Esp.held and t.held) and HELD_COLOR or color
+						setColor(sub, subCol)
+						if sub.dtext then
+							sub.dtext.Position = Vector2.new(cx, y1 + 10)
+							sub.dtext.Size = 11
+							setVis(sub, true)
+						elseif sub.f then
+							setRect(sub, cx, y1 + 2, 240, 14)
+							setVis(sub, true)
+						end
+					else
+						setVis(s.heldLabel, false)
+					end
 				else
 					setVis(s.heldLabel, false)
 				end
@@ -827,8 +1037,44 @@ return function(deps)
 		end
 	end
 
+	local function removeDrawRec(r)
+		if not r then
+			return
+		end
+		pcall(function()
+			if r.dline then
+				r.dline:Remove()
+			elseif r.dsquare then
+				r.dsquare:Remove()
+			elseif r.dtext then
+				r.dtext:Remove()
+			elseif r.dcircle then
+				r.dcircle:Remove()
+			end
+		end)
+	end
+
+	local function destroySlotDraw(s)
+		if not s then
+			return
+		end
+		for _, list in ipairs({ s.box, s.boxOut, s.bones, s.boneOut, s.joints }) do
+			for _, r in ipairs(list) do
+				removeDrawRec(r)
+			end
+		end
+		removeDrawRec(s.boxFill)
+		removeDrawRec(s.tracer)
+		removeDrawRec(s.tracerOut)
+		removeDrawRec(s.label)
+		removeDrawRec(s.heldLabel)
+	end
+
 	local function destroyOverlay()
 		stopLoop()
+		for _, s in pairs(slots) do
+			destroySlotDraw(s)
+		end
 		if overlay then
 			overlay:Destroy()
 			overlay = nil
@@ -838,6 +1084,12 @@ return function(deps)
 	end
 
 	function Esp:ensureGui()
+		if Esp.useDrawing and drawingOk() then
+			if not heartbeatConn then
+				self:bootLoop()
+			end
+			return
+		end
 		if overlay and overlay.Parent then
 			self:bootLoop()
 			return
@@ -877,6 +1129,11 @@ return function(deps)
 	end
 
 	function Esp:applyExternalVisualPreset()
+		self.useDrawing = drawingOk()
+		self.labelStyle = "External"
+		self.cornerLength = 8
+		self.color = Color3.fromRGB(255, 120, 200)
+		self.visibleColor = Color3.fromRGB(120, 255, 180)
 		self.master = true
 		self.box = true
 		self.boxStyle = "Corners"
@@ -887,12 +1144,14 @@ return function(deps)
 		self.name = true
 		self.distance = true
 		self.held = true
-		self.healthBar = true
+		self.healthBar = false
 		self.healthText = true
 		self.teamCheck = true
+		self.visibleCheck = true
 		self.tracers = false
-		self.distanceFade = false
+		self.distanceFade = true
 		self.maxDist = 5000
+		destroyOverlay()
 		self:setMaster(true)
 	end
 

@@ -1,7 +1,8 @@
--- Fust aim — Vault-style camera/mouse lock (no Shoot/Swing spoof, no GunControl hooks).
--- Live Vault capture: FOV 220px, smoothing 2 (error/smooth mousemoverel), prediction via
--- bulletSpeed, silent = same lock (Shoot dir matched camera). Not remote silent.
+-- Fust aim — external.wtf-style FOV (Drawing) + camera/mouse lock; true silent in fust_exploit.
 return function(deps)
+	local function drawingOk()
+		return type(Drawing) == "table" and type(Drawing.new) == "function"
+	end
 	local Players = deps.Players
 	local RunService = deps.RunService
 	local UserInputService = deps.UserInputService
@@ -104,7 +105,8 @@ return function(deps)
 		crossGap = 4,
 		crossThick = 2,
 		crossColor = Color3.fromRGB(235, 70, 70),
-		fovRingColor = Color3.fromRGB(235, 70, 70),
+		fovRingColor = Color3.fromRGB(255, 105, 180),
+		fovUseDrawing = drawingOk(),
 		fovFillTransparency = 0.82,
 		bound = false,
 		stickyChar = nil,
@@ -126,7 +128,7 @@ return function(deps)
 
 	local crossGui
 	local crossParts = {}
-	local fovRing, fovStroke, fovFill, statusLabel, manipLabel
+	local fovRing, fovStroke, fovFill, statusLabel, manipLabel, fovDrawCircle
 	local combatTracerGui
 	local combatTracerPool = {}
 	local TRACER_POOL = 12
@@ -242,6 +244,8 @@ return function(deps)
 		self.tracerWidth = 1
 		self.tracerLifeMs = 400
 		self.showManipHud = true
+		self.fovRingColor = Color3.fromRGB(255, 105, 180)
+		self.fovUseDrawing = drawingOk()
 		self:syncBind()
 	end
 
@@ -727,6 +731,12 @@ return function(deps)
 		table.clear(Aim._tracers)
 		manipLabel = nil
 		table.clear(crossParts)
+		if fovDrawCircle then
+			pcall(function()
+				fovDrawCircle:Remove()
+			end)
+			fovDrawCircle = nil
+		end
 		fovRing, fovStroke, fovFill, statusLabel = nil, nil, nil, nil
 		self.lastFovRadius = -1
 		self.lastShowCross = nil
@@ -822,8 +832,25 @@ return function(deps)
 		manipLabel.Parent = crossGui
 	end
 
+	local function ensureFovDrawing(self)
+		if not self.fovUseDrawing or not drawingOk() then
+			return
+		end
+		if fovDrawCircle then
+			return
+		end
+		fovDrawCircle = Drawing.new("Circle")
+		fovDrawCircle.Filled = false
+		fovDrawCircle.NumSides = 72
+		fovDrawCircle.Thickness = 1.5
+		fovDrawCircle.Transparency = 0.2
+		fovDrawCircle.Visible = false
+	end
+
 	function Aim:updateVisuals(cam, dt)
 		local needGui = self.drawFov or self.filledFov or self.showCrosshair or self.visualCheck
+			or self.showManipHud
+			or (self.fovUseDrawing and self.drawFov)
 		if not needGui then
 			if crossGui then
 				self:destroyCrosshair()
@@ -850,23 +877,44 @@ return function(deps)
 		local diam = math.floor(self:fovRadiusPx(cam, fovShow) * 2 + 0.5)
 		local showRing = self.drawFov
 		local showFill = self.filledFov and self.drawFov
-		if fovRing and (self.lastShowRing ~= showRing or self.lastFovRadius ~= diam) then
-			self.lastShowRing = showRing
-			fovRing.Visible = showRing
-			if showRing then
-				fovRing.Size = UDim2.fromOffset(diam, diam)
-				if fovStroke then
-					fovStroke.Color = self.fovRingColor
+		local drawRing = showRing and self.fovUseDrawing and drawingOk()
+		if drawRing then
+			ensureFovDrawing(self)
+			if fovDrawCircle then
+				local vp = cam.ViewportSize
+				fovDrawCircle.Position = Vector2.new(vp.X * 0.5, vp.Y * 0.5)
+				fovDrawCircle.Radius = diam * 0.5
+				fovDrawCircle.Color = self.fovRingColor
+				fovDrawCircle.Visible = true
+			end
+			if fovRing then
+				fovRing.Visible = false
+			end
+			if fovFill then
+				fovFill.Visible = false
+			end
+		else
+			if fovDrawCircle then
+				fovDrawCircle.Visible = false
+			end
+			if fovRing and (self.lastShowRing ~= showRing or self.lastFovRadius ~= diam) then
+				self.lastShowRing = showRing
+				fovRing.Visible = showRing
+				if showRing then
+					fovRing.Size = UDim2.fromOffset(diam, diam)
+					if fovStroke then
+						fovStroke.Color = self.fovRingColor
+					end
 				end
 			end
-		end
-		if fovFill and (self.lastShowFill ~= showFill or (showFill and self.lastFovRadius ~= diam)) then
-			self.lastShowFill = showFill
-			fovFill.Visible = showFill
-			if showFill then
-				fovFill.BackgroundColor3 = self.fovRingColor
-				fovFill.BackgroundTransparency = self.fovFillTransparency
-				fovFill.Size = UDim2.fromOffset(diam, diam)
+			if fovFill and (self.lastShowFill ~= showFill or (showFill and self.lastFovRadius ~= diam)) then
+				self.lastShowFill = showFill
+				fovFill.Visible = showFill
+				if showFill then
+					fovFill.BackgroundColor3 = self.fovRingColor
+					fovFill.BackgroundTransparency = self.fovFillTransparency
+					fovFill.Size = UDim2.fromOffset(diam, diam)
+				end
 			end
 		end
 		self.lastFovRadius = diam

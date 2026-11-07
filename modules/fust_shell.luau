@@ -7,7 +7,7 @@ return function(deps)
 	local Misc = deps.Misc
 	local Exploit = deps.Exploit
 	local Presets = deps.Presets
-	local bundleVersion = deps.BundleVersion or "2.15.0"
+	local bundleVersion = deps.BundleVersion or "2.16.0"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false
@@ -716,6 +716,43 @@ return function(deps)
 		DependsOn = "Fust_EspBox",
 		Callback = function(v)
 			Esp.cornerScale = v
+		end,
+	})
+	visSec:Slider({
+		Name = "Corner px (external)",
+		Min = 4,
+		Max = 24,
+		Default = 8,
+		Increment = 1,
+		Flag = "Fust_EspCornerPx",
+		DependsOn = "Fust_EspBox",
+		Callback = function(v)
+			Esp.cornerLength = v
+		end,
+	})
+	visSec:Toggle({
+		Name = "Drawing ESP",
+		Default = Esp.useDrawing == true,
+		Flag = "Fust_EspDrawing",
+		Callback = function(v)
+			Esp.useDrawing = v
+			if Esp.destroy then
+				pcall(function()
+					Esp:destroy()
+				end)
+			end
+			if Esp.master then
+				Esp:setMaster(true)
+			end
+		end,
+	})
+	visSec:Dropdown({
+		Name = "Name style",
+		Options = { "Classic", "External" },
+		Default = Esp.labelStyle == "External" and "External" or "Classic",
+		Flag = "Fust_EspLabelStyle",
+		Callback = function(v)
+			Esp.labelStyle = v
 		end,
 	})
 	visSec:Toggle({ Name = "Tracers", Default = false, Flag = "Fust_EspTrace", Callback = function(v)
