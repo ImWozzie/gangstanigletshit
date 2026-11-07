@@ -4173,12 +4173,16 @@ end
 
 -- Label / Stat / Paragraph / Divider ----------------------------------------
 function Section:Label(text)
+ -- Accept "hello" or { Text = "hello" } (shell uses the table form).
+ if type(text) == "table" then
+  text = text.Text or text.Name or text[1] or ""
+ end
  local label = new("TextLabel", {
  Size = UDim2.new(1, 0, 0, 0),
  AutomaticSize = Enum.AutomaticSize.Y,
  BackgroundTransparency = 1,
  FontFace = Fonts.Regular,
- Text = text or "",
+ Text = tostring(text or ""),
  TextColor3 = Theme.SubText,
  TextSize = 12,
  RichText = true,
@@ -4189,8 +4193,8 @@ function Section:Label(text)
  }, { padding(5, 5, 8, 8) })
  return {
  Frame = label,
- Set = function(_, t) label.Text = t end,
- SetText = function(_, t) label.Text = t end,
+ Set = function(_, t) label.Text = tostring(t or "") end,
+ SetText = function(_, t) label.Text = tostring(t or "") end,
  }
 end
 
