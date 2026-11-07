@@ -73,7 +73,7 @@ return function(deps)
 		master = false,
 		maxDist = 2500,
 		maxTargets = 12,
-		rate = 30,
+		rate = 60,
 		useDrawing = drawingOk(),
 		labelStyle = "External",
 		cornerLength = 8,
@@ -101,6 +101,16 @@ return function(deps)
 		visibleCheck = false,
 		visibleColor = Color3.fromRGB(152, 255, 200), -- mint
 		thickness = 1.5,
+		lookLine = true,
+		lookLength = 8,
+		lookColor = Color3.fromRGB(255, 220, 120),
+		statusTags = true,
+		aimWarn = true,
+		aimCone = 8,
+		aimWarnColor = Color3.fromRGB(255, 60, 60),
+		adsColor = Color3.fromRGB(255, 170, 60),
+		offscreen = true,
+		offscreenRadius = 220,
 	}
 
 	local overlay
@@ -109,7 +119,11 @@ return function(deps)
 	local pickBuf = {} -- reused by pickTargets to avoid alloc every scan
 	local partCache = setmetatable({}, { __mode = "k" })
 	local heartbeatConn
-	local scanAcc, renderAcc = 0, 0
+	local RENDER_NAME = "FustEspRender"
+	local INFO_TICK = 0.1
+	local scanAcc, renderAcc, infoAcc = 0, 0, 0
+	local warnRec
+	local aimersBuf = {}
 	local OUTLINE_COLOR = Color3.fromRGB(10, 10, 10)
 	local BAR_BG = Color3.fromRGB(18, 18, 18)
 	local HP_LOW = Color3.fromRGB(230, 70, 60)
@@ -159,6 +173,13 @@ return function(deps)
 			end
 			return
 		end
+		if r.dtri then
+			if r.vis ~= v then
+				r.vis = v
+				r.dtri.Visible = v
+			end
+			return
+		end
 		if r.vis ~= v then
 			r.vis = v
 			r.f.Visible = v
@@ -197,9 +218,20 @@ return function(deps)
 			end
 			return
 		end
+		if r.dtri then
+			if r.col ~= c then
+				r.col = c
+				r.dtri.Color = c
+			end
+			return
+		end
 		if r.col ~= c then
 			r.col = c
-			r.f.BackgroundColor3 = c
+			if r.isText then
+				r.f.TextColor3 = c
+			else
+				r.f.BackgroundColor3 = c
+			end
 		end
 	end
 
@@ -269,6 +301,23 @@ return function(deps)
 		return { dcircle = c, vis = false }
 	end
 
+	local function makeDrawTri()
+		local t = Drawing.new("Triangle")
+		t.Visible = false
+		t.Filled = true
+		t.Thickness = 1
+		return { dtri = t, vis = false }
+	end
+
+	local function makeBar(z, anchor)
+		if Esp.useDrawing and drawingOk() then
+			return makeDrawSquare()
+		end
+		local r = makeFrame(z)
+		r.f.AnchorPoint = anchor
+		return r
+	end
+
 	local function makeSeg(z)
 		if Esp.useDrawing and drawingOk() then
 			return makeDrawLine()
@@ -292,7 +341,9 @@ return function(deps)
 		t.Visible = false
 		t.ZIndex = 6
 		t.Parent = overlay
-		return newRec(t)
+		local rec = newRec(t)
+		rec.isText = true
+		return rec
 	end
 
 	-- Frames for one target, made the first time that slot is used.
@@ -336,11 +387,27 @@ return function(deps)
 		for k = 1, MAX_JOINTS do
 			s.joints[k] = Esp.useDrawing and drawingOk() and makeDrawDot() or makeFrame(4, true)
 		end
-		s.barBg = makeFrame(2)
-		s.barBg.f.AnchorPoint = Vector2.new(0, 0)
-		s.barBg.f.BackgroundTransparency = 0.25
-		s.barFill = makeFrame(3)
-		s.barFill.f.AnchorPoint = Vector2.new(0, 1)
+		s.barBg = makeBar(2, Vector2.new(0, 0))
+		if s.barBg.f then
+			s.barBg.f.BackgroundTransparency = 0.25
+		else
+			s.barBg.dsquare.Transparency = 0.75
+		end
+		s.barFill = makeBar(3, Vector2.new(0, 1))
+		s.look = makeSeg(3)
+		s.lookOut = makeSeg(1)
+		if s.lookOut.f then
+			s.lookOut.f.BackgroundTransparency = 0.5
+		end
+		s.tagLabel = makeText()
+		if s.tagLabel.dtext then
+			s.tagLabel.dtext.Size = 11
+		elseif s.tagLabel.f then
+			s.tagLabel.f.TextSize = 11
+		end
+		if Esp.useDrawing and drawingOk() then
+			s.arrow = makeDrawTri()
+		end
 		s.label = makeText()
 		s.heldLabel = makeText()
 		if s.heldLabel.f then
@@ -368,6 +435,12 @@ return function(deps)
 		setVis(s.barFill, false)
 		setVis(s.label, false)
 		setVis(s.heldLabel, false)
+		setVis(s.look, false)
+		setVis(s.lookOut, false)
+		setVis(s.tagLabel, false)
+		if s.arrow then
+			setVis(s.arrow, false)
+		end
 		if s.boxFill then
 			setVis(s.boxFill, false)
 		end
@@ -417,6 +490,49 @@ return function(deps)
 		end
 		setColor(r, color)
 		setRect(r, x, y, size, size)
+		setVis(r, true)
+	end
+
+	-- Bar rect with its top-left at (x, y).
+	local function bar(r, x, y, w, h, color)
+		setColor(r, color)
+		if r.dsquare then
+			r.dsquare.Position = Vector2.new(x, y)
+			r.dsquare.Size = Vector2.new(w, h)
+		elseif r.f.AnchorPoint.Y > 0.5 then
+			setRect(r, x, y + h, w, h)
+		else
+			setRect(r, x, y, w, h)
+		end
+		setVis(r, true)
+	end
+
+	local function setText(r, text)
+		if r.key == text then
+			return
+		end
+		r.key = text
+		if r.dtext then
+			r.dtext.Text = text
+		elseif r.f then
+			r.f.Text = text
+		end
+	end
+
+	local function textAt(r, x, y, size, w)
+		if r.dtext then
+			r.dtext.Position = Vector2.new(x, y)
+			if r.ts ~= size then
+				r.ts = size
+				r.dtext.Size = size
+			end
+		elseif r.f then
+			if r.ts ~= size then
+				r.ts = size
+				r.f.TextSize = size
+			end
+			setRect(r, x, y, w or 220, size + 3)
+		end
 		setVis(r, true)
 	end
 
@@ -584,6 +700,8 @@ return function(deps)
 				or Esp.healthBar
 				or Esp.healthText
 				or Esp.tracers
+				or Esp.lookLine
+				or Esp.offscreen
 			)
 	end
 
@@ -676,6 +794,82 @@ return function(deps)
 			t.dist = math.sqrt(t.d2)
 			t.held = Esp.held and heldText(t.char) or nil
 			t.armor = Esp.armor and armorText(t.char) or nil
+		end
+	end
+
+	local function serverNow()
+		local ok, t = pcall(function()
+			return workspace:GetServerTimeNow()
+		end)
+		return ok and t or os.time()
+	end
+
+	local function statusText(t)
+		local tags = {}
+		if t.aimingAtMe then
+			tags[#tags + 1] = "AIMING AT YOU"
+		elseif t.ads then
+			tags[#tags + 1] = "ADS"
+		end
+		if t.reloading then
+			tags[#tags + 1] = "RELOAD"
+		end
+		if t.sprinting then
+			tags[#tags + 1] = "SPRINT"
+		elseif t.crouching then
+			tags[#tags + 1] = "CROUCH"
+		end
+		return #tags > 0 and table.concat(tags, " · ") or nil
+	end
+
+	-- Slower pass (10 Hz): labels, line of sight, aim state. Render only reads the results.
+	local function info()
+		local camera = workspace.CurrentCamera
+		local camPos = camera and camera.CFrame.Position
+		local myRoot = LOCAL.Character and LOCAL.Character:FindFirstChild("HumanoidRootPart")
+		local myPos = myRoot and myRoot.Position
+		local now = serverNow()
+		local cone = math.cos(math.rad(math.clamp(Esp.aimCone or 8, 1, 45)))
+		for i = 1, #targets do
+			local t = targets[i]
+			local c, char = t.cache, t.char
+			if c and char then
+				t.ads = char:GetAttribute("LookAds") == true
+				local gr = char:GetAttribute("GunReload")
+				t.reloading = type(gr) == "number" and gr > 1e9 and gr > now
+				t.sprinting = t.plr:GetAttribute("Sprinting") == true
+				t.crouching = t.plr:GetAttribute("Crouching") == true
+				t.aimingAtMe = false
+				local head = c.head
+				if Esp.aimWarn and myPos and head and head.Parent and t.ads then
+					local toMe = myPos - head.Position
+					local m = toMe.Magnitude
+					if m > 1 then
+						t.aimingAtMe = head.CFrame.LookVector:Dot(toMe / m) >= cone
+					end
+				end
+				if Esp.visibleCheck and camPos and head and head.Parent then
+					t.visible = isVisible(camPos, head.Position, char)
+				else
+					t.visible = true
+				end
+				if Esp.name or Esp.distance or Esp.healthText or Esp.held then
+					t.text = formatEspLabel(t)
+				else
+					t.text = nil
+				end
+				local sub = {}
+				if Esp.labelStyle ~= "External" then
+					if Esp.held and t.held then
+						sub[#sub + 1] = t.held
+					end
+					if Esp.armor and t.armor then
+						sub[#sub + 1] = t.armor
+					end
+				end
+				t.subText = #sub > 0 and table.concat(sub, "  ·  ") or nil
+				t.tags = Esp.statusTags and statusText(t) or nil
+			end
 		end
 	end
 
@@ -809,8 +1003,9 @@ return function(deps)
 		local baseColor = Esp.color
 		local visColor = Esp.visibleColor
 		local checkVis = Esp.visibleCheck
-		local camPos = camera.CFrame.Position
+		local camCF = camera.CFrame
 		local used = 0
+		table.clear(aimersBuf)
 		for i, t in ipairs(targets) do
 			local c = t.cache
 			local s = getSlot(i)
@@ -827,11 +1022,38 @@ return function(deps)
 			end
 			if not ok then
 				hideSlot(s)
+				if Esp.offscreen and s.arrow and root and root.Parent and t.hum.Health > 0 then
+					local rel = camCF:PointToObjectSpace(root.Position)
+					local dir = Vector2.new(rel.X, rel.Z)
+					if dir.Magnitude > 0.01 then
+						dir = dir.Unit
+						local r = math.min(Esp.offscreenRadius or 220, math.min(vp.X, vp.Y) * 0.45)
+						local center = vp * 0.5
+						local tip = center + dir * (r + 12)
+						local base = center + dir * r
+						local side = Vector2.new(-dir.Y, dir.X) * 7
+						local tri = s.arrow.dtri
+						tri.PointA = tip
+						tri.PointB = base + side
+						tri.PointC = base - side
+						tri.Transparency = math.clamp(1 - (t.dist / math.max(Esp.maxDist, 1)) * 0.6, 0.35, 1)
+						setColor(s.arrow, t.aimingAtMe and Esp.aimWarnColor or baseColor)
+						setVis(s.arrow, true)
+					end
+				end
 			else
 				local color = baseColor
-				local visible = not checkVis or isVisible(camPos, head.Position, t.char)
 				if checkVis then
-					color = visible and visColor or Esp.hiddenColor
+					color = (t.visible ~= false) and visColor or Esp.hiddenColor
+				end
+				if t.aimingAtMe then
+					color = Esp.aimWarnColor
+					aimersBuf[#aimersBuf + 1] = t.plr.DisplayName
+				elseif t.ads and Esp.statusTags then
+					color = Esp.adsColor
+				end
+				if s.arrow then
+					setVis(s.arrow, false)
 				end
 				local fade = 1
 				if Esp.distanceFade and Esp.maxDist > 120 then
@@ -893,92 +1115,79 @@ return function(deps)
 					hideList(s.joints)
 				end
 
+				if Esp.lookLine and head then
+					local hp0 = head.Position
+					local tip = hp0 + head.CFrame.LookVector * (Esp.lookLength or 8)
+					local sa = camera:WorldToViewportPoint(hp0)
+					local sb = camera:WorldToViewportPoint(tip)
+					if sa.Z > 0 and sb.Z > 0 then
+						local lc = t.aimingAtMe and Esp.aimWarnColor or Esp.lookColor
+						seg(s.look, sa.X, sa.Y, sb.X, sb.Y, lc, math.max(thick, 1))
+						if Esp.outline then
+							seg(s.lookOut, sa.X, sa.Y, sb.X, sb.Y, OUTLINE_COLOR, math.max(thick, 1) + 2)
+						else
+							setVis(s.lookOut, false)
+						end
+					else
+						setVis(s.look, false)
+						setVis(s.lookOut, false)
+					end
+				else
+					setVis(s.look, false)
+					setVis(s.lookOut, false)
+				end
+
 				local hp = t.hum.Health / math.max(t.hum.MaxHealth, 1)
 				hp = math.clamp(hp, 0, 1)
 				if Esp.healthBar and t.dist >= HP_MIN_DIST and t.dist <= Esp.healthBarMaxDist and h >= 12 then
 					local barW = 3
 					local bx = x0 - barW - 5
-					setColor(s.barBg, BAR_BG)
-					setRect(s.barBg, bx - 1, y0 - 1, barW + 2, h + 2)
-					setVis(s.barBg, true)
-					setColor(s.barFill, hpColor(hp))
-					setRect(s.barFill, bx, y1, barW, math.max(h * hp, 1))
-					setVis(s.barFill, true)
+					bar(s.barBg, bx - 1, y0 - 1, barW + 2, h + 2, BAR_BG)
+					local fh = math.max(h * hp, 1)
+					bar(s.barFill, bx, y1 - fh, barW, fh, hpColor(hp))
 				else
 					setVis(s.barBg, false)
 					setVis(s.barFill, false)
 				end
 
-				if Esp.name or Esp.distance or Esp.healthText or Esp.held then
-					local text = formatEspLabel(t)
-					local key = text .. "|" .. tostring(fade)
+				local size = t.dist > 600 and 12 or 14
+				if t.text then
 					local lab = s.label
-					if lab.key ~= key then
-						lab.key = key
-						if lab.dtext then
-							lab.dtext.Text = text
-						elseif lab.f then
-							lab.f.Text = text
-						end
-					end
+					setText(lab, t.text)
 					setColor(lab, color)
 					if lab.dtext then
-						lab.dtext.Position = Vector2.new(cx, y0 - 6)
-						lab.dtext.Size = t.dist > 600 and 12 or 14
-						lab.dtext.Transparency = 0.35 + (1 - fade) * 0.45
-						setVis(lab, true)
-					elseif lab.f then
+						lab.dtext.Transparency = 1 - (1 - fade) * 0.45
+						textAt(lab, cx, y0 - size - 3, size)
+					else
 						local tTrans = 0.35 + (1 - fade) * 0.45
 						if lab.tt ~= tTrans then
 							lab.tt = tTrans
 							lab.f.TextTransparency = tTrans
 						end
-						local size = t.dist > 600 and 12 or 13
-						if lab.ts ~= size then
-							lab.ts = size
-							lab.f.TextSize = size
-						end
-						setRect(lab, cx, y0 - 4, 220, 16)
-						setVis(lab, true)
+						textAt(lab, cx, y0 - 3, size - 1)
 					end
 				else
 					setVis(s.label, false)
 				end
 
-				if Esp.labelStyle ~= "External" then
-					local subChunks = {}
-					if Esp.held and t.held then
-						subChunks[#subChunks + 1] = t.held
-					end
-					if Esp.armor and t.armor then
-						subChunks[#subChunks + 1] = t.armor
-					end
-					if #subChunks > 0 then
-						local sub = s.heldLabel
-						local subKey = table.concat(subChunks, "|")
-						if sub.key ~= subKey then
-							sub.key = subKey
-							if sub.dtext then
-								sub.dtext.Text = table.concat(subChunks, "  ·  ")
-							elseif sub.f then
-								sub.f.Text = table.concat(subChunks, "  ·  ")
-							end
-						end
-						local subCol = (Esp.held and t.held) and HELD_COLOR or color
-						setColor(sub, subCol)
-						if sub.dtext then
-							sub.dtext.Position = Vector2.new(cx, y1 + 10)
-							sub.dtext.Size = 11
-							setVis(sub, true)
-						elseif sub.f then
-							setRect(sub, cx, y1 + 2, 240, 14)
-							setVis(sub, true)
-						end
-					else
-						setVis(s.heldLabel, false)
-					end
+				local below = y1 + 3
+				if t.subText then
+					local sub = s.heldLabel
+					setText(sub, t.subText)
+					setColor(sub, (Esp.held and t.held) and HELD_COLOR or color)
+					textAt(sub, cx, sub.dtext and below or below + 12, 11, 240)
+					below += 13
 				else
 					setVis(s.heldLabel, false)
+				end
+
+				if t.tags then
+					local tag = s.tagLabel
+					setText(tag, t.tags)
+					setColor(tag, t.aimingAtMe and Esp.aimWarnColor or Esp.adsColor)
+					textAt(tag, cx, tag.dtext and below or below + 12, 11, 240)
+				else
+					setVis(s.tagLabel, false)
 				end
 			end
 		end
@@ -987,40 +1196,72 @@ return function(deps)
 				hideSlot(slots[i])
 			end
 		end
+		if Esp.aimWarn and #aimersBuf > 0 then
+			if not warnRec then
+				warnRec = makeText()
+				if warnRec.dtext then
+					warnRec.dtext.Size = 18
+				elseif warnRec.f then
+					warnRec.f.TextSize = 16
+				end
+			end
+			local who = aimersBuf[1] .. (#aimersBuf > 1 and (" +" .. (#aimersBuf - 1)) or "")
+			setText(warnRec, "AIMED AT BY " .. who)
+			setColor(warnRec, Esp.aimWarnColor)
+			textAt(warnRec, vp.X * 0.5, warnRec.dtext and 90 or 112, warnRec.dtext and 18 or 16, 400)
+		elseif warnRec then
+			setVis(warnRec, false)
+		end
 	end
 
 	local function stopLoop()
 		if heartbeatConn then
-			heartbeatConn:Disconnect()
+			pcall(function()
+				RunService:UnbindFromRenderStep(RENDER_NAME)
+			end)
 			heartbeatConn = nil
 		end
 	end
 
+	-- Drawn right after the camera moves each frame, so boxes stay glued to players while you turn.
+	-- Esp.rate >= 60 = every frame; lower values throttle the draw. Scan / info run on their own timers.
 	function Esp:bootLoop()
 		if heartbeatConn then
 			return
 		end
-		scanAcc, renderAcc = SCAN_TICK, 1
-		heartbeatConn = RunService.Heartbeat:Connect(function(dt)
+		scanAcc, renderAcc, infoAcc = SCAN_TICK, 1, INFO_TICK
+		heartbeatConn = true
+		RunService:BindToRenderStep(RENDER_NAME, Enum.RenderPriority.Camera.Value + 1, function(dt)
 			if not shouldRun() then
 				hideAll()
+				if warnRec then
+					setVis(warnRec, false)
+				end
 				stopLoop()
 				return
 			end
 			scanAcc += dt
+			infoAcc += dt
 			renderAcc += dt
 			if scanAcc >= SCAN_TICK then
-				scanAcc -= SCAN_TICK
+				scanAcc = 0
 				scan()
+				infoAcc = INFO_TICK
 			end
-			local interval = 1 / math.clamp(Esp.rate, 5, 240)
-			if renderAcc >= interval then
-				-- Subtract (don't zero) so high FPS doesn't hitch when Heartbeat stalls.
-				renderAcc -= interval
-				if renderAcc > interval then
-					renderAcc = 0
-				end
+			if infoAcc >= INFO_TICK then
+				infoAcc = 0
+				info()
+			end
+			local rate = Esp.rate or 60
+			if rate >= 60 then
+				renderAcc = 0
 				render()
+			else
+				local interval = 1 / math.clamp(rate, 5, 60)
+				if renderAcc >= interval then
+					renderAcc = 0
+					render()
+				end
 			end
 		end)
 	end
@@ -1050,6 +1291,8 @@ return function(deps)
 				r.dtext:Remove()
 			elseif r.dcircle then
 				r.dcircle:Remove()
+			elseif r.dtri then
+				r.dtri:Remove()
 			end
 		end)
 	end
@@ -1068,6 +1311,12 @@ return function(deps)
 		removeDrawRec(s.tracerOut)
 		removeDrawRec(s.label)
 		removeDrawRec(s.heldLabel)
+		removeDrawRec(s.look)
+		removeDrawRec(s.lookOut)
+		removeDrawRec(s.tagLabel)
+		removeDrawRec(s.arrow)
+		removeDrawRec(s.barBg)
+		removeDrawRec(s.barFill)
 	end
 
 	local function destroyOverlay()
@@ -1081,6 +1330,10 @@ return function(deps)
 		end
 		table.clear(slots)
 		targets = {}
+		if warnRec then
+			removeDrawRec(warnRec)
+			warnRec = nil
+		end
 	end
 
 	function Esp:ensureGui()
