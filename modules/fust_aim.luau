@@ -1,8 +1,7 @@
--- Fust aim — external.wtf-style FOV (Drawing) + camera/mouse lock; true silent in fust_exploit.
+-- Fust aim — Vault-style camera/mouse lock (no Shoot/Swing spoof, no GunControl hooks).
+-- Live Vault capture: FOV 220px, smoothing 2 (error/smooth mousemoverel), prediction via
+-- bulletSpeed, silent = same lock (Shoot dir matched camera). Not remote silent.
 return function(deps)
-	local function drawingOk()
-		return type(Drawing) == "table" and type(Drawing.new) == "function"
-	end
 	local Players = deps.Players
 	local RunService = deps.RunService
 	local UserInputService = deps.UserInputService
@@ -19,14 +18,6 @@ return function(deps)
 		Pelvis = "LowerTorso",
 		["HumanoidRootPart"] = "HumanoidRootPart",
 	}
-	local LIMB_BONES = {
-		"LeftUpperArm",
-		"RightUpperArm",
-		"LeftLowerArm",
-		"RightLowerArm",
-		"LeftUpperLeg",
-		"RightUpperLeg",
-	}
 
 	local Aim = {
 		-- Vault defaults mirrored
@@ -36,47 +27,16 @@ return function(deps)
 		bulletSpeed = 900,
 		-- Aim as if projectile is hitscan (no travel lead). Does not change server bullets.
 		instantAim = false,
-		hitscan = false, -- UI alias; when true, prediction lead is skipped for guns
-		-- external.wtf-style aggressive align on silent (camera/mouse only — no Shoot spoof).
-		manip = false,
-		manipStrength = 1.35,
-		silentBurstSteps = 4,
-		silentHoldMs = 100,
-		silentSnapDeg = 22,
-		manipMaxDistance = 5,
-		silentInputConn = nil,
-		hitScanEdgeAim = false,
-		hitScanKeepPart = 0.45,
-		hitScanMultiPoint = false,
-		hitScanLimbs = false,
-		combatTracers = false,
-		tracerWidth = 1,
-		tracerLifeMs = 400,
-		tracerThroughWalls = false,
-		tracerFollowBullet = false,
-		tracerImpacts = false,
-		tracerBulletSpeed = 900,
-		tracerColor = Color3.fromRGB(255, 120, 200),
-		bulletPath = false,
-		edgeMarkers = false,
-		hitChance = 100,
-		leadMultiplier = 1,
-		jumpShootEnabled = false,
-		jumpShootBoostMs = 140,
-		noJumpCooldown = false,
-		gunPush = false,
-		gunPushForce = 14,
-		armManip = false,
-		armManipAuto = false,
-		manipRequireVis = false,
-		showManipHud = false,
-		lastManipPct = -1,
-		_tracers = {},
 		-- Bow ballistic — separate from gun prediction
 		bowPrediction = false,
 		bowSpeed = 280,
 		bowGravity = true,
 		bowGravityScale = 1,
+		autoBallistics = true,
+		bulletGravity = 50,
+		assumeFullDraw = false,
+		velSmooth = 0.35,
+		pingComp = false,
 		targetBones = { "Head" },
 		smoothing = 2, -- Vault: divide screen error by this each frame
 		weaponFovPx = 220,
@@ -120,8 +80,7 @@ return function(deps)
 		crossGap = 4,
 		crossThick = 2,
 		crossColor = Color3.fromRGB(235, 70, 70),
-		fovRingColor = Color3.fromRGB(255, 105, 180),
-		fovUseDrawing = drawingOk(),
+		fovRingColor = Color3.fromRGB(235, 70, 70),
 		fovFillTransparency = 0.82,
 		bound = false,
 		stickyChar = nil,
@@ -143,14 +102,7 @@ return function(deps)
 
 	local crossGui
 	local crossParts = {}
-	local fovRing, fovStroke, fovFill, statusLabel, manipLabel, fovDrawCircle
-	local combatTracerGui
-	local combatTracerPool = {}
-	local TRACER_POOL = 12
-	local bulletPathGui
-	local bulletPathFrames = {}
-	local jumpCooldownConn
-	local edgeMarkerFrames = {}
+	local fovRing, fovStroke, fovFill, statusLabel
 
 	local function isActive()
 		return Aim.drawFov
@@ -160,8 +112,6 @@ return function(deps)
 			or Aim.aimbotEnabled
 			or Aim.silentOn
 			or Aim.triggerEnabled
-			or Aim.combatTracers
-			or Aim.showManipHud
 	end
 
 	function Aim:isAds()
@@ -220,199 +170,14 @@ return function(deps)
 		if not self.silentOn then
 			return false
 		end
-		if os.clock() < (self.silentUntil or 0) then
-			return true
-		end
 		if self.silentShotOnly then
 			return UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
 		end
 		return true
 	end
 
-	function Aim:setHitscan(on)
-		self.hitscan = on == true
-		self.instantAim = self.hitscan
-	end
-
-	function Aim:applyExternalCombatPreset()
-		self.aimbotEnabled = false
-		self.lockAssist = false
-		self.silentOn = true
-		self.silentShotOnly = true
-		self:setHitscan(true)
-		self.prediction = false
-		self.manip = true
-		self.silentBurstSteps = 4
-		self.silentHoldMs = 100
-		self.silentSnapDeg = 22
-		self.manipStrength = 1.35
-		self.smoothing = 2
-		self.weaponFovPx = 240
-		self.silentFovPx = 240
-		self.silentMaxDist = 1500
-		self.maxDist = 1500
-		self.useMouseDrive = true
-		self.battleMode = true
-		self.requireAds = false
-		self.drawFov = true
-		self.targetBones = { "Head" }
-		self.hitScanEdgeAim = true
-		self.hitScanKeepPart = 0.45
-		self.manipMaxDistance = 5
-		self.combatTracers = true
-		self.tracerWidth = 1
-		self.tracerLifeMs = 400
-		self.showManipHud = true
-		self.hitChance = 100
-		self.leadMultiplier = 1
-		self.manipRequireVis = true
-		self.visibleCheck = true
-		self.tracerFollowBullet = true
-		self.tracerImpacts = true
-		self.tracerBulletSpeed = 900
-		self.fovRingColor = Color3.fromRGB(255, 105, 180)
-		self.fovUseDrawing = drawingOk()
-		self:syncBind()
-	end
-
-	function Aim:rollHitChance()
-		local hc = math.clamp(self.hitChance or 100, 1, 100)
-		return hc >= 100 or math.random(1, 100) <= hc
-	end
-
-	function Aim:isJumpShootActive(hum)
-		if not self.jumpShootEnabled or not hum then
-			return false
-		end
-		return UserInputService:IsKeyDown(Enum.KeyCode.Space)
-			or hum:GetState() == Enum.HumanoidStateType.Jumping
-			or hum:GetState() == Enum.HumanoidStateType.Freefall
-	end
-
-	function Aim:syncJumpBypass()
-		if jumpCooldownConn then
-			jumpCooldownConn:Disconnect()
-			jumpCooldownConn = nil
-		end
-		if not self.noJumpCooldown then
-			return
-		end
-		jumpCooldownConn = UserInputService.JumpRequest:Connect(function()
-			local hum = LOCAL.Character and LOCAL.Character:FindFirstChildOfClass("Humanoid")
-			if hum and hum.Health > 0 then
-				hum:ChangeState(Enum.HumanoidStateType.Jumping)
-			end
-		end)
-	end
-
-	function Aim:applyGunPush(cam)
-		if not self.gunPush or not cam then
-			return
-		end
-		local root = LOCAL.Character and LOCAL.Character:FindFirstChild("HumanoidRootPart")
-		if not root then
-			return
-		end
-		local push = math.clamp(self.gunPushForce or 12, 0, 40)
-		local vel = root.AssemblyLinearVelocity + cam.CFrame.LookVector * push
-		root.AssemblyLinearVelocity = vel
-	end
-
-	local function onSilentInput(self, input, gpe)
-		if gpe or not self.silentOn then
-			return
-		end
-			if input.UserInputType == Enum.UserInputType.MouseButton1 then
-			if not self:rollHitChance() then
-				return
-			end
-			self.firingSilent = true
-			local hold = self.silentHoldMs or 100
-			local hum = LOCAL.Character and LOCAL.Character:FindFirstChildOfClass("Humanoid")
-			if self:isJumpShootActive(hum) then
-				hold = hold + (self.jumpShootBoostMs or 140)
-			end
-			self.silentUntil = os.clock() + hold / 1000
-			local cam = workspace.CurrentCamera
-			if cam then
-				self:applyGunPush(cam)
-				if self.bulletPath then
-					self:spawnBulletPath(cam)
-				end
-			end
-			if cam and self.combatTracers then
-				local bones = self:boneListForPick()
-				local pt = self:pickTarget(cam, self.silentFovPx, bones, self.stickyChar)
-				if pt then
-					self:spawnCombatTracer(cam, pt)
-				end
-			end
-		end
-	end
-
 	function Aim:resolveBoneName(alias)
 		return BONE_ALIASES[alias] or alias
-	end
-
-	function Aim:boneListForPick()
-		if not self.hitScanLimbs then
-			return self.targetBones
-		end
-		local seen, list = {}, {}
-		local function add(alias)
-			local key = self:resolveBoneName(alias)
-			if not seen[key] then
-				seen[key] = true
-				list[#list + 1] = alias
-			end
-		end
-		for i = 1, #self.targetBones do
-			add(self.targetBones[i])
-		end
-		for i = 1, #LIMB_BONES do
-			add(LIMB_BONES[i])
-		end
-		return list
-	end
-
-	function Aim:aimPointOnPart(part, cam, root)
-		if not part or not part:IsA("BasePart") then
-			return part and part.Position
-		end
-		local camCF = cam.CFrame
-		local camPos = camCF.Position
-		local look = camCF.LookVector
-		local center = self:predictPos(part, root, camPos)
-		local aimPt = center
-		if self.hitScanEdgeAim then
-			local toPart = part.Position - camPos
-			local depth = math.max(toPart:Dot(look), 0)
-			local near = camPos + look * depth
-			local edge = part:GetClosestPointOnSurface(near)
-			local keep = math.clamp(self.hitScanKeepPart or 0, 0, 1)
-			aimPt = part.Position:Lerp(edge, 1 - keep)
-		end
-		if self.hitScanMultiPoint then
-			local half = part.Size * 0.5
-			local cf = part.CFrame
-			local offsets = {
-				Vector3.zero,
-				Vector3.new(half.X, 0, 0),
-				Vector3.new(-half.X, 0, 0),
-				Vector3.new(0, half.Y, 0),
-				Vector3.new(0, -half.Y, 0),
-			}
-			local bestPx, bestPt = math.huge, aimPt
-			for i = 1, #offsets do
-				local world = cf:PointToWorldSpace(offsets[i])
-				local px = self:screenDistPx(cam, world)
-				if px < bestPx then
-					bestPx, bestPt = px, world
-				end
-			end
-			aimPt = bestPt
-		end
-		return aimPt
 	end
 
 	function Aim:getBonePart(char, alias)
@@ -519,41 +284,180 @@ return function(deps)
 		return string.find(id, "bow", 1, true) ~= nil or string.find(id, "crossbow", 1, true) ~= nil
 	end
 
+	-- Game ballistics (ReplicatedStorage.Fust.Items + FustCombat, read 2026-11-06).
+	-- Guns: { speed studs/s, gravity studs/s^2 } - no gravity entry = game default 50.
+	-- Bows: speed = full * (charge * 125 + 95) / 220, charge 0.15..1 over drawTime; crossbow is always loaded.
+	local GAME_GRAVITY = 50
+	local GUNS = {
+		assault_rifle = { 1350 }, bolt_action_rifle = { 2600, 5 }, custom_smg = { 900, 8 },
+		double_barrel = { 520 }, drum_smg = { 880, 8 }, high_caliber_revolver = { 1100 },
+		hunt_smg = { 900, 8 }, lever_carbine = { 1250 }, lr_sniper = { 3000, 4 }, m249 = { 1400 },
+		pipe_shotgun = { 560 }, pump_shotgun = { 560 }, revolver = { 950 }, rocket_launcher = { 80 },
+		scar = { 1450 }, semi_auto_pistol = { 900 }, semi_auto_rifle = { 1425 },
+		service_pistol = { 950 }, tactical_smg = { 950, 8 },
+	}
+	local BOWS = {
+		hunting_bow = { full = 220, gravity = 50, draw = 0.8 },
+		compound_bow = { full = 290, gravity = 40, draw = 1.1 },
+		crossbow = { full = 320, gravity = 28, draw = 0 },
+	}
+	local MIN_CHARGE = 0.15
+	Aim.GUNS, Aim.BOWS = GUNS, BOWS
+
+	local velTrack = setmetatable({}, { __mode = "k" })
+	local drawStart = nil
+
+	function Aim:heldItemId()
+		local char = LOCAL.Character
+		local tool = char and char:FindFirstChildOfClass("Tool")
+		if not tool then
+			return nil, nil
+		end
+		local id = tool:GetAttribute("ItemId")
+		if type(id) ~= "string" or id == "" then
+			id = string.lower((tool.Name:gsub("[%s%-]+", "_")))
+		end
+		return id, tool.Name
+	end
+
+	-- Bow draw charge from how long aim has been held with a bow out (the game's own timer is local).
+	function Aim:bowCharge(spec)
+		if not spec or spec.draw <= 0 or self.assumeFullDraw then
+			return 1
+		end
+		local held = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
+			or LOCAL:GetAttribute("FustAimBow") == true
+		if not held then
+			drawStart = nil
+			return 1
+		end
+		drawStart = drawStart or os.clock()
+		return math.clamp((os.clock() - drawStart) / spec.draw, MIN_CHARGE, 1)
+	end
+
+	-- speed, gravity, label for what is in hand (nil when prediction is off for it).
+	function Aim:ballistics()
+		local id, name = self:heldItemId()
+		local bow = id and BOWS[id]
+		if not bow and self:holdingBow() then
+			bow = BOWS.hunting_bow
+		end
+		if bow then
+			if not self.bowPrediction then
+				return nil
+			end
+			if self.autoBallistics == false then
+				local g = self.bowGravity and GAME_GRAVITY * math.clamp(self.bowGravityScale or 1, 0, 2) or 0
+				return math.max(self.bowSpeed or 220, 40), g, (name or "Bow") .. " (manual)"
+			end
+			local c = self:bowCharge(bow)
+			local speed = bow.full * (c * 125 + 95) / 220
+			local g = self.bowGravity == false and 0 or bow.gravity * math.clamp(self.bowGravityScale or 1, 0, 2)
+			return speed, g, string.format("%s %d%%", name or "Bow", math.floor(c * 100 + 0.5))
+		end
+		if not self.prediction then
+			return nil
+		end
+		local gun = id and GUNS[id]
+		if gun and self.autoBallistics ~= false then
+			return gun[1], gun[2] or GAME_GRAVITY, name
+		end
+		if not gun and not (id and self:looksLikeGun(id)) then
+			return nil
+		end
+		return math.max(self.bulletSpeed or 900, 50), self.bulletGravity or GAME_GRAVITY, (name or "Unknown") .. " (manual)"
+	end
+
+	local GUN_WORDS = { "rifle", "smg", "pistol", "shotgun", "revolver", "sniper", "launcher", "carbine", "m249", "scar", "barrel" }
+	function Aim:looksLikeGun(id)
+		for _, w in ipairs(GUN_WORDS) do
+			if string.find(id, w, 1, true) then
+				return true
+			end
+		end
+		return false
+	end
+
+	function Aim:ballisticsText()
+		local speed, g, label = self:ballistics()
+		if not speed then
+			return "Not a gun or bow - aiming at the bone"
+		end
+		return string.format("%s  ·  %d st/s  ·  drop %d", tostring(label), math.floor(speed + 0.5), math.floor(g + 0.5))
+	end
+
+	-- Velocity as the target is seen moving on this client, smoothed (raw part velocity of other
+	-- players is noisy and spikes on replication steps). Teleports and stale samples reset it.
+	function Aim:targetVelocity(root)
+		local now = os.clock()
+		local pos = root.Position
+		local st = velTrack[root]
+		if not st then
+			st = { pos = pos, t = now, vel = root.AssemblyLinearVelocity }
+			velTrack[root] = st
+			return st.vel, st
+		end
+		local dt = now - st.t
+		if dt >= 1 / 240 then
+			local meas = (pos - st.pos) / dt
+			if dt > 0.4 or meas.Magnitude > 160 then
+				meas = root.AssemblyLinearVelocity
+				st.vel = meas
+			else
+				st.vel = st.vel:Lerp(meas, math.clamp(self.velSmooth or 0.35, 0.05, 1))
+			end
+			st.pos, st.t = pos, now
+		end
+		return st.vel, st
+	end
+
 	function Aim:predictPos(part, root, camPos)
 		if not part then
 			return nil
 		end
-		local useBow = self.bowPrediction and self:holdingBow()
-		local useGun = self.prediction and not useBow
-		if not useBow and not useGun then
-			return part.Position
-		end
-		local vel = Vector3.zero
-		if root and root:IsA("BasePart") then
-			vel = root.AssemblyLinearVelocity
-		elseif part:IsA("BasePart") then
-			vel = part.AssemblyLinearVelocity
-		end
 		local pos = part.Position
-		-- Hitscan aim: lock current bone (optional tiny velocity snap only).
-		if self.hitscan or self.instantAim then
+		if self.instantAim then
 			return pos
 		end
-		local origin = camPos or pos
-		local speed = useBow and math.max(self.bowSpeed or 280, 40) or math.max(self.bulletSpeed or 900, 50)
-		local g = 0
-		if useBow and self.bowGravity then
-			g = workspace.Gravity * math.clamp(self.bowGravityScale or 1, 0, 2)
+		local speed, g = self:ballistics()
+		if not speed then
+			return pos
 		end
+		local vel, st = Vector3.zero, nil
+		local mover = (root and root:IsA("BasePart")) and root or (part:IsA("BasePart") and part or nil)
+		if mover then
+			vel, st = self:targetVelocity(mover)
+		end
+		local airborne, grounded = false, false
+		if st then
+			st.hum = st.hum or (mover.Parent and mover.Parent:FindFirstChildOfClass("Humanoid"))
+			if st.hum then
+				local state = st.hum:GetState()
+				airborne = state == Enum.HumanoidStateType.Freefall or state == Enum.HumanoidStateType.Jumping
+				grounded = not airborne and st.hum.FloorMaterial ~= Enum.Material.Air
+			end
+		end
+		if grounded then
+			vel = Vector3.new(vel.X, 0, vel.Z)
+		end
+		local lead = 0
+		if self.pingComp then
+			lead = math.clamp(LOCAL:GetNetworkPing() * 0.5, 0, 0.25)
+		end
+		local origin = camPos or pos
+		local worldG = workspace.Gravity
+		local t = (pos - origin).Magnitude / speed
 		local aim = pos
-		local t = (aim - origin).Magnitude / speed
-		local lead = math.clamp(self.leadMultiplier or 1, 0, 3)
-		for _ = 1, 4 do
-			aim = pos + vel * t * lead
-			if g > 0 then
-				aim = aim + Vector3.new(0, 0.5 * g * t * t, 0)
+		for _ = 1, 5 do
+			local tt = t + lead
+			aim = pos + vel * tt
+			if airborne then
+				aim -= Vector3.new(0, 0.5 * worldG * tt * tt, 0)
 			end
 			t = (aim - origin).Magnitude / speed
+		end
+		if g > 0 then
+			aim += Vector3.new(0, 0.5 * g * t * t, 0)
 		end
 		return aim
 	end
@@ -574,11 +478,12 @@ return function(deps)
 
 	function Aim:bestPointOnChar(char, boneList, cam)
 		local root = char:FindFirstChild("HumanoidRootPart")
+		local camPos = cam.CFrame.Position
 		local bestPt, bestPart, bestPx = nil, nil, math.huge
 		for i = 1, #boneList do
 			local part = self:getBonePart(char, boneList[i])
 			if part then
-				local pt = self:aimPointOnPart(part, cam, root)
+				local pt = self:predictPos(part, root, camPos)
 				if pt then
 					pt += Vector3.new(0, 0.05, 0)
 					local px = self:screenDistPx(cam, pt)
@@ -734,194 +639,12 @@ return function(deps)
 		return math.clamp(px, 8, 800)
 	end
 
-	function Aim:ensureCombatTracers()
-		if combatTracerGui and combatTracerGui.Parent then
-			return
-		end
-		combatTracerGui = Instance.new("ScreenGui")
-		combatTracerGui.Name = "FustCombatTracers"
-		combatTracerGui.ResetOnSpawn = false
-		combatTracerGui.IgnoreGuiInset = true
-		combatTracerGui.DisplayOrder = 205
-		combatTracerGui:SetAttribute("FustBundle", true)
-		combatTracerGui.Parent = LOCAL:WaitForChild("PlayerGui")
-		for i = 1, TRACER_POOL do
-			local f = Instance.new("Frame")
-			f.Name = "T" .. i
-			f.AnchorPoint = Vector2.new(0.5, 0.5)
-			f.BorderSizePixel = 0
-			f.BackgroundColor3 = self.tracerColor
-			f.Visible = false
-			f.ZIndex = 3
-			f.Parent = combatTracerGui
-			combatTracerPool[i] = { f = f, untilT = 0 }
-		end
-	end
-
-	function Aim:spawnCombatTracer(cam, worldPt)
-		self:ensureCombatTracers()
-		local sp, on = cam:WorldToViewportPoint(worldPt)
-		if not on or sp.Z <= 0 then
-			return
-		end
-		local vs = cam.ViewportSize
-		local slot
-		for i = 1, TRACER_POOL do
-			if combatTracerPool[i].untilT <= os.clock() then
-				slot = combatTracerPool[i]
-				break
-			end
-		end
-		slot = slot or combatTracerPool[1]
-		local f = slot.f
-		local ax, ay = vs.X * 0.5, vs.Y
-		local bx, by = sp.X, sp.Y
-		local dx, dy = bx - ax, by - ay
-		local len = math.sqrt(dx * dx + dy * dy)
-		if len < 2 then
-			return
-		end
-		local thick = math.max(self.tracerWidth or 1, 1)
-		f.Size = UDim2.fromOffset(len, thick)
-		f.Position = UDim2.fromOffset((ax + bx) * 0.5, (ay + by) * 0.5)
-		f.Rotation = math.deg(math.atan2(dy, dx))
-		f.BackgroundColor3 = self.tracerColor
-		f.BackgroundTransparency = 0.15
-		f.Visible = true
-		slot.untilT = os.clock() + (self.tracerLifeMs or 400) / 1000
-		slot.worldFrom = cam.CFrame.Position
-		slot.worldTo = worldPt
-		slot.travel = 0
-		Aim._tracers[#Aim._tracers + 1] = slot
-		if self.tracerImpacts then
-			self:spawnTracerImpact(cam, worldPt)
-		end
-	end
-
-	function Aim:spawnTracerImpact(cam, worldPt)
-		self:ensureCombatTracers()
-		local sp, on = cam:WorldToViewportPoint(worldPt)
-		if not on or sp.Z <= 0 then
-			return
-		end
-		local dot = Instance.new("Frame")
-		dot.Name = "Impact"
-		dot.AnchorPoint = Vector2.new(0.5, 0.5)
-		dot.Size = UDim2.fromOffset(5, 5)
-		dot.Position = UDim2.fromOffset(sp.X, sp.Y)
-		dot.BackgroundColor3 = self.tracerColor
-		dot.BorderSizePixel = 0
-		dot.ZIndex = 4
-		local c = Instance.new("UICorner")
-		c.CornerRadius = UDim.new(1, 0)
-		c.Parent = dot
-		dot.Parent = combatTracerGui
-		local life = (self.tracerLifeMs or 400) / 1000
-		task.delay(life, function()
-			if dot and dot.Parent then
-				dot:Destroy()
-			end
-		end)
-	end
-
-	function Aim:spawnBulletPath(cam)
-		local look = cam.CFrame.LookVector
-		local dist = math.min(self.maxDist or 800, 1200)
-		local params = RaycastParams.new()
-		params.FilterType = Enum.RaycastFilterType.Exclude
-		local ign = { LOCAL.Character }
-		params.FilterDescendantsInstances = ign
-		local hit = workspace:Raycast(cam.CFrame.Position, look * dist, params)
-		local endPt = hit and hit.Position or (cam.CFrame.Position + look * dist)
-		if not bulletPathGui or not bulletPathGui.Parent then
-			bulletPathGui = Instance.new("ScreenGui")
-			bulletPathGui.Name = "FustBulletPath"
-			bulletPathGui.ResetOnSpawn = false
-			bulletPathGui.IgnoreGuiInset = true
-			bulletPathGui.DisplayOrder = 204
-			bulletPathGui.Parent = LOCAL:WaitForChild("PlayerGui")
-		end
-		local f = Instance.new("Frame")
-		f.BackgroundColor3 = self.tracerColor
-		f.BackgroundTransparency = 0.35
-		f.BorderSizePixel = 0
-		f.AnchorPoint = Vector2.new(0.5, 0.5)
-		f.Parent = bulletPathGui
-		local a, onA = cam:WorldToViewportPoint(cam.CFrame.Position)
-		local b, onB = cam:WorldToViewportPoint(endPt)
-		if onA and onB and a.Z > 0 and b.Z > 0 then
-			local dx, dy = b.X - a.X, b.Y - a.Y
-			local len = math.sqrt(dx * dx + dy * dy)
-			f.Size = UDim2.fromOffset(len, 2)
-			f.Position = UDim2.fromOffset((a.X + b.X) * 0.5, (a.Y + b.Y) * 0.5)
-			f.Rotation = math.deg(math.atan2(dy, dx))
-			f.Visible = true
-			task.delay(0.22, function()
-				if f.Parent then
-					f:Destroy()
-				end
-			end)
-		else
-			f:Destroy()
-		end
-	end
-
-	function Aim:tickCombatTracers(cam, dt)
-		local now = os.clock()
-		dt = dt or 0
-		for i = 1, TRACER_POOL do
-			local slot = combatTracerPool[i]
-			if not slot or not slot.f.Visible then
-				continue
-			end
-			if self.tracerFollowBullet and slot.worldFrom and slot.worldTo and cam then
-				local speed = math.max(self.tracerBulletSpeed or 900, 100)
-				slot.travel = (slot.travel or 0) + speed * dt
-				local dir = slot.worldTo - slot.worldFrom
-				local mag = dir.Magnitude
-				if mag > 0.1 then
-					local pt = slot.worldFrom + dir.Unit * math.min(slot.travel, mag)
-					local sp, on = cam:WorldToViewportPoint(pt)
-					local vs = cam.ViewportSize
-					if on and sp.Z > 0 then
-						local ax, ay = vs.X * 0.5, vs.Y
-						local bx, by = sp.X, sp.Y
-						local dx, dy = bx - ax, by - ay
-						local len = math.sqrt(dx * dx + dy * dy)
-						if len >= 2 then
-							local thick = math.max(self.tracerWidth or 1, 1)
-							slot.f.Size = UDim2.fromOffset(len, thick)
-							slot.f.Position = UDim2.fromOffset((ax + bx) * 0.5, (ay + by) * 0.5)
-							slot.f.Rotation = math.deg(math.atan2(dy, dx))
-						end
-					end
-				end
-			end
-			if slot.untilT <= now then
-				slot.f.Visible = false
-			end
-		end
-	end
-
 	function Aim:destroyCrosshair()
 		if crossGui then
 			crossGui:Destroy()
 			crossGui = nil
 		end
-		if combatTracerGui then
-			combatTracerGui:Destroy()
-			combatTracerGui = nil
-		end
-		table.clear(combatTracerPool)
-		table.clear(Aim._tracers)
-		manipLabel = nil
 		table.clear(crossParts)
-		if fovDrawCircle then
-			pcall(function()
-				fovDrawCircle:Remove()
-			end)
-			fovDrawCircle = nil
-		end
 		fovRing, fovStroke, fovFill, statusLabel = nil, nil, nil, nil
 		self.lastFovRadius = -1
 		self.lastShowCross = nil
@@ -1003,39 +726,10 @@ return function(deps)
 		statusLabel.TextWrapped = true
 		statusLabel.Visible = false
 		statusLabel.Parent = crossGui
-
-		manipLabel = Instance.new("TextLabel")
-		manipLabel.Name = "ManipHud"
-		manipLabel.BackgroundTransparency = 1
-		manipLabel.Font = Enum.Font.GothamBold
-		manipLabel.TextSize = 14
-		manipLabel.TextColor3 = Color3.fromRGB(255, 90, 120)
-		manipLabel.AnchorPoint = Vector2.new(0.5, 1)
-		manipLabel.Position = UDim2.new(0.5, 0, 1, -72)
-		manipLabel.Size = UDim2.fromOffset(160, 20)
-		manipLabel.Visible = false
-		manipLabel.Parent = crossGui
-	end
-
-	local function ensureFovDrawing(self)
-		if not self.fovUseDrawing or not drawingOk() then
-			return
-		end
-		if fovDrawCircle then
-			return
-		end
-		fovDrawCircle = Drawing.new("Circle")
-		fovDrawCircle.Filled = false
-		fovDrawCircle.NumSides = 72
-		fovDrawCircle.Thickness = 1.5
-		fovDrawCircle.Transparency = 0.2
-		fovDrawCircle.Visible = false
 	end
 
 	function Aim:updateVisuals(cam, dt)
 		local needGui = self.drawFov or self.filledFov or self.showCrosshair or self.visualCheck
-			or self.showManipHud
-			or (self.fovUseDrawing and self.drawFov)
 		if not needGui then
 			if crossGui then
 				self:destroyCrosshair()
@@ -1062,68 +756,26 @@ return function(deps)
 		local diam = math.floor(self:fovRadiusPx(cam, fovShow) * 2 + 0.5)
 		local showRing = self.drawFov
 		local showFill = self.filledFov and self.drawFov
-		local drawRing = showRing and self.fovUseDrawing and drawingOk()
-		if drawRing then
-			ensureFovDrawing(self)
-			if fovDrawCircle then
-				local vp = cam.ViewportSize
-				fovDrawCircle.Position = Vector2.new(vp.X * 0.5, vp.Y * 0.5)
-				fovDrawCircle.Radius = diam * 0.5
-				fovDrawCircle.Color = self.fovRingColor
-				fovDrawCircle.Visible = true
-			end
-			if fovRing then
-				fovRing.Visible = false
-			end
-			if fovFill then
-				fovFill.Visible = false
-			end
-		else
-			if fovDrawCircle then
-				fovDrawCircle.Visible = false
-			end
-			if fovRing and (self.lastShowRing ~= showRing or self.lastFovRadius ~= diam) then
-				self.lastShowRing = showRing
-				fovRing.Visible = showRing
-				if showRing then
-					fovRing.Size = UDim2.fromOffset(diam, diam)
-					if fovStroke then
-						fovStroke.Color = self.fovRingColor
-					end
+		if fovRing and (self.lastShowRing ~= showRing or self.lastFovRadius ~= diam) then
+			self.lastShowRing = showRing
+			fovRing.Visible = showRing
+			if showRing then
+				fovRing.Size = UDim2.fromOffset(diam, diam)
+				if fovStroke then
+					fovStroke.Color = self.fovRingColor
 				end
 			end
-			if fovFill and (self.lastShowFill ~= showFill or (showFill and self.lastFovRadius ~= diam)) then
-				self.lastShowFill = showFill
-				fovFill.Visible = showFill
-				if showFill then
-					fovFill.BackgroundColor3 = self.fovRingColor
-					fovFill.BackgroundTransparency = self.fovFillTransparency
-					fovFill.Size = UDim2.fromOffset(diam, diam)
-				end
+		end
+		if fovFill and (self.lastShowFill ~= showFill or (showFill and self.lastFovRadius ~= diam)) then
+			self.lastShowFill = showFill
+			fovFill.Visible = showFill
+			if showFill then
+				fovFill.BackgroundColor3 = self.fovRingColor
+				fovFill.BackgroundTransparency = self.fovFillTransparency
+				fovFill.Size = UDim2.fromOffset(diam, diam)
 			end
 		end
 		self.lastFovRadius = diam
-
-		if self.combatTracers then
-			self:tickCombatTracers(cam, dt)
-		end
-
-		if manipLabel and self.showManipHud then
-			local pt, ch = self:pickTarget(cam, self.weaponFovPx, self:boneListForPick(), self.stickyChar)
-			local pct = 0
-			if pt then
-				local dist = (pt - cam.CFrame.Position).Magnitude
-				local cap = math.max(self.manipMaxDistance or 5, 0.5)
-				pct = math.floor(math.clamp(100 * (1 - dist / cap), 0, 100) + 0.5)
-			end
-			if self.lastManipPct ~= pct then
-				self.lastManipPct = pct
-				manipLabel.Text = string.format("MANIP %d%%", pct)
-			end
-			manipLabel.Visible = pt ~= nil
-		elseif manipLabel then
-			manipLabel.Visible = false
-		end
 
 		if not statusLabel or not self.visualCheck then
 			if statusLabel and statusLabel.Visible then
@@ -1154,51 +806,26 @@ return function(deps)
 		if not self:shouldRunSilent() then
 			return
 		end
-		local bones = self:boneListForPick()
+		local bones = self.targetBones
 		local maxD = (self.silentMaxDist and self.silentMaxDist > 0) and self.silentMaxDist or self.maxDist
 		local pt, ch = self:pickTarget(cam, self.silentFovPx, bones, self.stickyChar, maxD)
 		if not pt then
 			return
 		end
 		self.stickyChar = ch
-		local dist3 = (pt - cam.CFrame.Position).Magnitude
-		local manipDist = math.max(self.manipMaxDistance or 5, 0.5)
-		local useManip = self.manip and dist3 <= manipDist
-		if useManip and self.manipRequireVis and self.visibleCheck then
-			local head = ch and ch:FindFirstChild("Head")
-			if head and not self:isVisible(cam, cam.CFrame.Position, head.Position, ch) then
-				useManip = false
-			end
+		-- Always drive hard: mouse first, camera fallback so silent works without mousemoverel.
+		local ok = false
+		if self.useMouseDrive then
+			ok = self:mouseDriveToward(cam, pt)
 		end
-		local steps = useManip and math.clamp(math.floor(self.silentBurstSteps or 1), 1, 8) or 1
-		local snapCap = useManip and math.clamp(self.silentSnapDeg or 22, 4, 45) or math.max(self.lockCapDeg or 12, 18)
-		local savedSmooth = self.smoothing
-		local savedStr = self.mouseDriveStrength
-		if useManip then
-			self.smoothing = math.max(1, (savedSmooth or 2) / (self.manipStrength or 1.35))
-			self.mouseDriveStrength = math.clamp((savedStr or 1) * (self.manipStrength or 1.35), 0.25, 2)
-		end
-		for _ = 1, steps do
-			local ok = false
-			if self.useMouseDrive then
-				ok = self:mouseDriveToward(cam, pt)
-			end
-			if not ok then
-				self:cameraSnapToward(cam, pt, snapCap)
-			end
-		end
-		if useManip then
-			self.smoothing = savedSmooth
-			self.mouseDriveStrength = savedStr
+		if not ok then
+			self:cameraSnapToward(cam, pt, math.max(self.lockCapDeg or 12, 18))
 		end
 	end
 
 	function Aim:tryTriggerbot(cam, dt)
 		if not self.triggerEnabled or not self:triggerHeld() then
 			self.triggerAcc = 0
-			return
-		end
-		if not self:rollHitChance() then
 			return
 		end
 		self.triggerAcc += dt
@@ -1246,17 +873,8 @@ return function(deps)
 			return
 		end
 		self.bound = true
-		if self.drawFov or self.filledFov or self.showCrosshair or self.visualCheck or self.showManipHud then
+		if self.drawFov or self.filledFov or self.showCrosshair or self.visualCheck then
 			self:ensureCrosshair()
-		end
-		if self.combatTracers then
-			self:ensureCombatTracers()
-		end
-		self:syncJumpBypass()
-		if not self.silentInputConn then
-			self.silentInputConn = UserInputService.InputBegan:Connect(function(input, gpe)
-				onSilentInput(self, input, gpe)
-			end)
 		end
 
 		RunService:BindToRenderStep(AIM_RENDER, Enum.RenderPriority.Camera.Value + 5, function(dt)
@@ -1272,7 +890,7 @@ return function(deps)
 				self:runSilentBurst(cam)
 				ran = true
 			elseif self:shouldRunAimbot() then
-				local pt, ch = self:pickTarget(cam, self.weaponFovPx, self:boneListForPick(), self.stickyChar)
+				local pt, ch = self:pickTarget(cam, self.weaponFovPx, self.targetBones, self.stickyChar)
 				if pt then
 					self.stickyChar = ch
 					local ok = self:rotateToward(cam, pt, self.lockCapDeg)
@@ -1285,25 +903,14 @@ return function(deps)
 			if not ran and not self:aimKeysHeld() and not self:shouldRunSilent() then
 				self.stickyChar = nil
 			end
-			if not self:shouldRunSilent() then
-				self.firingSilent = false
-			end
 			self:tryTriggerbot(cam, dt)
 		end)
 	end
 
 	function Aim:unbind()
-		if jumpCooldownConn then
-			jumpCooldownConn:Disconnect()
-			jumpCooldownConn = nil
-		end
 		pcall(function()
 			RunService:UnbindFromRenderStep(AIM_RENDER)
 		end)
-		if self.silentInputConn then
-			self.silentInputConn:Disconnect()
-			self.silentInputConn = nil
-		end
 		self.bound = false
 		self.stickyChar = nil
 		self.firingSilent = false
@@ -1317,8 +924,6 @@ return function(deps)
 	function Aim:destroy()
 		self.aimbotEnabled = false
 		self.silentOn = false
-		self.manip = false
-		self:setHitscan(false)
 		self.triggerEnabled = false
 		self.lockAssist = false
 		self.aimKey1Held = false
