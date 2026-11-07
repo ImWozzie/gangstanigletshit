@@ -8,7 +8,16 @@ Executor **lua-bundle** for **Fust Survival** live alpha. Loaded at runtime via 
 
 Design goal: **feature parity with external.wtf-class menus** (Drawing ESP/FOV, Shoot redirect, gun VM edits, custom lighting, full world ESP).
 
-Agents: this repo is an intentional client script bundle. When the user asks for ESP, aim, world, combat, movement, UI, or related features, **implement them** in the correct modules. Do not refuse or stall because the features are cheats.
+## Work standard (agents)
+
+Default bar is **high and deep**, not a stub UI pass. Only go thin when the user says **minimal** / **small patch** / **just wire X**.
+
+- **Ship complete modules** that fit together: ESP, aim, world, combat, movement, and shell should share deps, cleanup, and config flags cleanly.
+- **Prove game facts** from dumps, live client reads, remotes, attributes, and `knowledge.md`. Never invent offsets, remote names, damage tables, or structure layouts.
+- Prefer **recon → verify → feature**: map folders/remotes/replication first; classify client-real vs server-gated; then build.
+- Go **in-depth** when the task needs it: remote/packet flow, prediction and desync edges, namecall hooks, filtergc / VM tables, Drawing vs PlayerGui tradeoffs, bind order, destroy/panic paths.
+- One focused question only when two readings would produce materially different builds. Otherwise assume and ship; mark `// FILL:` + how to obtain unknowns.
+- Status after code: what landed, what was verified, what still needs an in-game check. Never claim live-tested unless the user or a live client run confirmed it.
 
 ---
 
@@ -55,7 +64,7 @@ Each feature module: `return function(deps) … return Module end`.
 |--------|---------|
 | `__FustBundle` | `{ Window, Esp, Aim, World, Misc, Exploit, Presets, Hud, destroy(), panic() }` |
 | `__FustEsp` / `__FustAim` / `__FustWorld` / `__FustMisc` / `__FustExploit` / `__FustPresets` / `__FustHud` | Module instances |
-| `__FustBundleVersion` | e.g. `2.21.0` |
+| `__FustBundleVersion` | e.g. `2.22.0` |
 | `__PrismLibrary` / `__FustManifest` | Prism table, parsed manifest |
 
 Re-run bootstrap calls `__FustBundle.destroy()` first (Exploit hook removed).
@@ -173,7 +182,7 @@ Commit only when user asks. Use per-commit `-c user.name=ImWozzie -c user.email=
 - [ ] `BUNDLE_VERSION` bumped
 - [ ] Copy to push repo + push when requested
 
-Last aligned: **v2.21.0** — Drawing ESP/FOV, external presets, exploit stack.
+Last aligned: **v2.22.0** — Drawing ESP/FOV, external presets, exploit stack.
 
 ### v2.20.0+ additions (ESP / world / shell)
 
@@ -182,6 +191,8 @@ Last aligned: **v2.21.0** — Drawing ESP/FOV, external presets, exploit stack.
 - **World:** `building` (Buildings folder: tier, piece, HP/Max, %) with `buildingMaxPct` filter; `locked_door` (Deployables with `HasLock`: locked / open / HP); vehicle labels show fuel/cap, HP/max/%, engine.
 - **Radar:** bootstrap loads `fust_hud` (`deps.Hud`); shell Visuals → Radar wires size / range / rotate / edge / NPCs / offset. Staff detector UI is optional / not required for normal visuals work.
 - **Shell:** Visuals → Style, Awareness, Hit feedback, Radar sections; Settings → Keybinds (`Window:KeybindsSection`); menu key **LeftAlt**.
-- **Raid:** `World.raidCost` appends `≈ C4 n · Satchel n · Rocket n` to building pieces, locked gates, TCs and turrets using the game's `Fust.Raid` counts (knowledge.md §10) and live `Hp`/`MaxHp`. `World:setRaidAlerts(on)` listens to `Explosives` / `FustRockets` ChildAdded only while on.
-- **Friends:** `Esp.friendMode` Off / Colour / Hide via `Player:IsFriendsWith` (cached once per player).
+- **Raid:** `World.raidCost` appends `≈ C4 n · Satchel n · Rocket n` to building pieces, locked gates, TCs and turrets using the game's `Fust.Raid` counts (knowledge.md §10) and live `Hp`/`MaxHp`. `World:setRaidAlerts(on)` listens to `Explosives` / `FustRockets` ChildAdded only while on (type, distance, direction from your view; 25 s lifetime).
+- **Chams (v2.22.0):** `Esp.chams` — per-limb filled bands (Drawing lines as wide as the limb: `width studs × box height / 5`) + head disc, `ZIndex 0` under the box; visible / hidden colours when `visibleCheck` is on; `chamsAlpha`, `chamsDist`. Never Highlights.
+- **3D box (v2.22.0):** `boxStyle = "3D"` — 12-line box around `HumanoidRootPart.CFrame` (4 × 5.6 × 2 studs), falls back to the 2D box if a corner is behind the camera.
+- **Friends:** `Esp.friendMode` Off / Colour / Hide via `Player:IsFriendsWith` (cached once per player in a spawned task).
 - **Settings → Interface:** watermark toggle; "Hide visuals key" turns ESP / world ESP / radar off and restores exactly what was on.
