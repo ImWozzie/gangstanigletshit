@@ -49,7 +49,10 @@ return function(deps)
 			world_item = false,
 			patrol_heli = false,
 			tool_cupboard = false,
+			building = false,
+			locked_door = false,
 		},
+		buildingMaxPct = 100, -- only pieces at or under this HP %
 
 		zoomHeld = false,
 		zoomFov = 20,
@@ -232,6 +235,8 @@ return function(deps)
 		world_item = Color3.fromRGB(200, 200, 200),
 		patrol_heli = Color3.fromRGB(255, 80, 80),
 		tool_cupboard = Color3.fromRGB(160, 200, 255),
+		building = Color3.fromRGB(255, 190, 110),
+		locked_door = Color3.fromRGB(255, 140, 140),
 	}
 
 	local function nodeKind(model)
@@ -366,7 +371,29 @@ return function(deps)
 			end
 			return "wooden_box"
 		end
+		if model:GetAttribute("HasLock") == true then
+			return "locked_door"
+		end
 		return nil
+	end
+
+	local function prettyName(id)
+		return (tostring(id):gsub("_", " "):gsub("(%a)([%w]*)", function(a, b)
+			return a:upper() .. b
+		end))
+	end
+
+	local function hpBits(inst)
+		local hp = tonumber(inst:GetAttribute("Hp") or inst:GetAttribute("Health"))
+		local max = tonumber(inst:GetAttribute("MaxHp") or inst:GetAttribute("MaxHealth"))
+		if not hp then
+			return nil, nil
+		end
+		hp = math.max(hp, 0)
+		if max and max > 0 then
+			return string.format("%d/%d (%d%%)", math.floor(hp + 0.5), math.floor(max + 0.5), math.floor(hp / max * 100 + 0.5)), hp / max * 100
+		end
+		return tostring(math.floor(hp + 0.5)), nil
 	end
 
 	local function labelFor(kind, inst)
@@ -391,16 +418,33 @@ return function(deps)
 			return powered and "Turret ON" or "Turret"
 		end
 		if kind == "atv" or kind == "minicopter" then
-			local fuel = inst:GetAttribute("Fuel")
-			local hp = inst:GetAttribute("Health") or inst:GetAttribute("Hp")
+			local fuel = tonumber(inst:GetAttribute("Fuel"))
+			local cap = tonumber(inst:GetAttribute("FuelCap"))
 			local bits = { kind == "atv" and "ATV" or "Minicopter" }
-			if fuel ~= nil then
-				bits[#bits + 1] = "F" .. tostring(math.floor(tonumber(fuel) or 0))
+			if fuel then
+				bits[#bits + 1] = cap and string.format("Fuel %d/%d", math.floor(fuel), math.floor(cap)) or ("Fuel " .. math.floor(fuel))
 			end
-			if hp ~= nil then
-				bits[#bits + 1] = "HP" .. tostring(math.floor(tonumber(hp) or 0))
+			local hpText = hpBits(inst)
+			if hpText then
+				bits[#bits + 1] = "HP " .. hpText
 			end
-			return table.concat(bits, " ")
+			if inst:GetAttribute("Engine") == true then
+				bits[#bits + 1] = "ENGINE ON"
+			end
+			return table.concat(bits, "  ")
+		end
+		if kind == "building" then
+			local tier = inst:GetAttribute("Tier")
+			local piece = inst:GetAttribute("PieceType") or inst.Name
+			local hpText = hpBits(inst)
+			return (tier and (prettyName(tier) .. " ") or "") .. prettyName(piece) .. (hpText and ("  " .. hpText) or "")
+		end
+		if kind == "locked_door" then
+			local name = prettyName(inst:GetAttribute("Kind") or inst.Name)
+			local locked = inst:GetAttribute("Locked") == true
+			local open = inst:GetAttribute("GateOpen") == true
+			local hpText = hpBits(inst)
+			return name .. (locked and "  [LOCKED]" or "  [unlocked]") .. (open and "  open" or "") .. (hpText and ("  " .. hpText) or "")
 		end
 		local pretty = kind:gsub("_", " ")
 		return pretty:gsub("^%l", string.upper)
@@ -485,6 +529,12 @@ return function(deps)
 		end)
 		watchFolder(Workspace:FindFirstChild("FustMinicopters"), function(m)
 			return "minicopter", labelFor("minicopter", m)
+		end)
+		watchFolder(Workspace:FindFirstChild("Buildings"), function(m)
+			if not m:IsA("Model") then
+				return nil
+			end
+			return "building", labelFor("building", m)
 		end)
 		watchFolder(Workspace:FindFirstChild("Airdrops"), function(m)
 			return "airdrop", "Airdrop"
@@ -581,7 +631,12 @@ return function(deps)
 						if World.toggles[row.kind] ~= false and part and part.Parent then
 							local d = part.Position - origin
 							local d2 = d.X * d.X + d.Y * d.Y + d.Z * d.Z
-							if d2 <= maxD2 then
+							local keep = d2 <= maxD2
+							if keep and row.kind == "building" and (World.buildingMaxPct or 100) < 100 then
+								local _, pct = hpBits(row.inst)
+								keep = not pct or pct <= World.buildingMaxPct + 0.01
+							end
+							if keep then
 								row.d2 = d2
 								near[#near + 1] = row
 							end
