@@ -7,7 +7,7 @@ return function(deps)
 	local Misc = deps.Misc
 	local Exploit = deps.Exploit
 	local Presets = deps.Presets
-	local bundleVersion = deps.BundleVersion or "2.18.1"
+	local bundleVersion = deps.BundleVersion or "2.19.0"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false
@@ -425,6 +425,145 @@ return function(deps)
 		DependsOn = "Fust_CombatTrace",
 		Callback = function(c)
 			Aim.tracerColor = c
+		end,
+	})
+	tracerSec:Toggle({
+		Name = "Through walls",
+		Default = false,
+		Flag = "Fust_TraceThru",
+		DependsOn = "Fust_CombatTrace",
+		Callback = function(v)
+			Aim.tracerThroughWalls = v
+		end,
+	})
+	tracerSec:Toggle({
+		Name = "Follow bullet",
+		Default = false,
+		Flag = "Fust_TraceFollow",
+		DependsOn = "Fust_CombatTrace",
+		Callback = function(v)
+			Aim.tracerFollowBullet = v
+		end,
+	})
+	tracerSec:Toggle({
+		Name = "Impacts",
+		Default = false,
+		Flag = "Fust_TraceImpact",
+		DependsOn = "Fust_CombatTrace",
+		Callback = function(v)
+			Aim.tracerImpacts = v
+		end,
+	})
+
+	local combatExtra = aimTab:Section({ Name = "Combat (external)", Icon = "swords", Side = "Right" })
+	combatExtra:Slider({
+		Name = "Hit chance %",
+		Min = 1,
+		Max = 100,
+		Default = 100,
+		Increment = 1,
+		Flag = "Fust_HitChance",
+		Callback = function(v)
+			Aim.hitChance = v
+		end,
+	})
+	combatExtra:Slider({
+		Name = "Lead multiplier",
+		Min = 0,
+		Max = 3,
+		Default = 1,
+		Increment = 0.05,
+		Flag = "Fust_LeadMult",
+		DependsOn = "Fust_AimPred",
+		Callback = function(v)
+			Aim.leadMultiplier = v
+		end,
+	})
+	combatExtra:Toggle({
+		Name = "Manip require visible",
+		Default = false,
+		Flag = "Fust_ManipVis",
+		DependsOn = "Fust_Manip",
+		Callback = function(v)
+			Aim.manipRequireVis = v
+		end,
+	})
+	combatExtra:Toggle({
+		Name = "Jump shoot",
+		Default = false,
+		Flag = "Fust_JumpShoot",
+		DependsOn = "Fust_SilentOn",
+		Callback = function(v)
+			Aim.jumpShootEnabled = v
+		end,
+	})
+	combatExtra:Slider({
+		Name = "Jump hold boost (ms)",
+		Min = 0,
+		Max = 400,
+		Default = 140,
+		Flag = "Fust_JumpBoost",
+		DependsOn = "Fust_JumpShoot",
+		Callback = function(v)
+			Aim.jumpShootBoostMs = v
+		end,
+	})
+	combatExtra:Toggle({
+		Name = "No jump cooldown",
+		Default = false,
+		Risky = true,
+		Flag = "Fust_NoJumpCd",
+		Callback = function(v)
+			Aim.noJumpCooldown = v
+			Aim:syncJumpBypass()
+		end,
+	})
+	combatExtra:Toggle({
+		Name = "Gun push",
+		Default = false,
+		Flag = "Fust_GunPush",
+		DependsOn = "Fust_SilentOn",
+		Callback = function(v)
+			Aim.gunPush = v
+		end,
+	})
+	combatExtra:Slider({
+		Name = "Push force",
+		Min = 0,
+		Max = 40,
+		Default = 14,
+		Flag = "Fust_GunPushF",
+		DependsOn = "Fust_GunPush",
+		Callback = function(v)
+			Aim.gunPushForce = v
+		end,
+	})
+	combatExtra:Toggle({
+		Name = "Bullet path",
+		Default = false,
+		Flag = "Fust_BulletPath",
+		DependsOn = "Fust_SilentOn",
+		Callback = function(v)
+			Aim.bulletPath = v
+		end,
+	})
+	combatExtra:Toggle({
+		Name = "Edge markers",
+		Default = false,
+		Flag = "Fust_EdgeMark",
+		DependsOn = "Fust_HitEdge",
+		Callback = function(v)
+			Aim.edgeMarkers = v
+			Aim:syncBind()
+		end,
+	})
+	combatExtra:Toggle({
+		Name = "Arm manip",
+		Default = false,
+		Flag = "Fust_ArmManip",
+		DependsOn = "Fust_Manip",
+		Callback = function(v)
+			Aim.armManip = v
 		end,
 	})
 
