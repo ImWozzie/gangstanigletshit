@@ -60,14 +60,14 @@ return function(deps)
 		_wallLastJump = 0,
 		_wallConn = nil,
 
-		-- external.wtf noclip — Depth 0.2 + FustBodyBlock (no collide vs Default) + CanCollide off
+		-- external.wtf "Noclip" + **Wall Depth** slider — partial (limbs off, core collides)
 		noclipEnabled = false,
 		noclipHold = false,
 		noclipKeyHeld = false,
-		noclipDepth = 0.2,
-		noclipMinDepth = 0.1,
-		noclipMaxDepth = 0.2,
-		noclipUseBodyBlock = true,
+		wallDepth = 0.2,
+		wallDepthMin = 0.1,
+		wallDepthMax = 0.2,
+		noclipUseBodyBlock = false,
 		noclipManaged = true,
 		_noclipConn = nil,
 		_noclipDescConn = nil,
@@ -458,6 +458,13 @@ return function(deps)
 	end
 
 	local NOCLIP_GROUP = "FustBodyBlock"
+	local NOCLIP_CORE = {
+		HumanoidRootPart = true,
+		Head = true,
+		UpperTorso = true,
+		LowerTorso = true,
+		Torso = true,
+	}
 
 	local function restoreNoclip(self)
 		if not self._noclipOrig then
@@ -494,6 +501,10 @@ return function(deps)
 				part.CollisionGroup = NOCLIP_GROUP
 			end)
 		end
+		-- Live external: HRP/Head/Torso keep CanCollide — only limbs/accessories off
+		if NOCLIP_CORE[part.Name] then
+			return
+		end
 		if part.CanCollide then
 			part.CanCollide = false
 		end
@@ -510,19 +521,22 @@ return function(deps)
 		end
 	end
 
-	local function depthStep(self, char, hum, hrp)
+	local function wallDepthStep(self, char, hum, hrp)
 		local move = hum.MoveDirection
-		if move.Magnitude < 0.05 then
-			return
-		end
-		local depth = math.clamp(self.noclipDepth or 0.2, self.noclipMinDepth or 0.1, self.noclipMaxDepth or 0.2)
+		local dir = move.Magnitude >= 0.05 and move.Unit or hrp.CFrame.LookVector
+		local depth = math.clamp(self.wallDepth or 0.2, self.wallDepthMin or 0.1, self.wallDepthMax or 2)
 		local params = RaycastParams.new()
 		params.FilterType = Enum.RaycastFilterType.Exclude
 		params.FilterDescendantsInstances = { char }
-		local dir = move.Unit
-		local hit = Workspace:Raycast(hrp.Position, dir * (depth + 2), params)
-		if hit and hit.Distance <= depth + 0.75 then
-			hrp.CFrame = hrp.CFrame + dir * depth
+		local hit = Workspace:Raycast(hrp.Position, dir * (depth + 3), params)
+		if not hit then
+			return
+		end
+		if hit.Distance <= depth + 0.35 then
+			local push = depth - hit.Distance + 0.05
+			if push > 0 then
+				hrp.CFrame = hrp.CFrame + dir * math.min(push, depth)
+			end
 		end
 	end
 
@@ -584,7 +598,7 @@ return function(deps)
 			end
 			applyNoclip(self, char)
 			if self.noclipManaged then
-				depthStep(self, char, hum, hrp)
+				wallDepthStep(self, char, hum, hrp)
 			end
 		end)
 	end

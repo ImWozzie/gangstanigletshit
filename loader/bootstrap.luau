@@ -7,7 +7,7 @@
   Re-run to refresh all modules from GitHub. Update only esp/aim/shell/prism on GitHub independently.
 ]]
 
-local BUNDLE_VERSION = "2.16.2"
+local BUNDLE_VERSION = "2.16.3"
 local CACHE_BUST = tostring(os.clock()):gsub("%.", "")
 
 local MANIFEST_URL = "https://raw.githubusercontent.com/ImWozzie/gangstanigletshit/main/manifest.luau"

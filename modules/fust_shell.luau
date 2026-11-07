@@ -7,7 +7,7 @@ return function(deps)
 	local Misc = deps.Misc
 	local Exploit = deps.Exploit
 	local Presets = deps.Presets
-	local bundleVersion = deps.BundleVersion or "2.17.0"
+	local bundleVersion = deps.BundleVersion or "2.16.3"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false
@@ -884,116 +884,13 @@ return function(deps)
 	})
 	rangeSec:Slider({
 		Name = "ESP FPS",
-		Description = "60 = every frame, synced to the camera (smoothest)",
 		Min = 5,
 		Max = 60,
-		Default = 60,
-		Increment = 5,
+		Default = 30,
+		Increment = 1,
 		Flag = "Fust_EspRate",
 		Callback = function(v)
 			Esp.rate = v
-		end,
-	})
-
-	local awareSec = visTab:Section({ Name = "Awareness", Icon = "crosshair", Side = "Right" })
-	awareSec:Toggle({
-		Name = "Facing line",
-		Description = "Line from the head showing where they look",
-		Default = true,
-		Flag = "Fust_EspLook",
-		Callback = function(v)
-			Esp.lookLine = v
-		end,
-	})
-	awareSec:Slider({
-		Name = "Facing line length",
-		Min = 3,
-		Max = 40,
-		Default = 8,
-		Increment = 1,
-		Flag = "Fust_EspLookLen",
-		DependsOn = "Fust_EspLook",
-		Callback = function(v)
-			Esp.lookLength = v
-		end,
-	})
-	awareSec:ColorPicker({
-		Name = "Facing line colour",
-		Default = Color3.fromRGB(255, 220, 120),
-		Flag = "Fust_EspLookCol",
-		DependsOn = "Fust_EspLook",
-		Callback = function(c)
-			Esp.lookColor = c
-		end,
-	})
-	awareSec:Toggle({
-		Name = "Status tags",
-		Description = "ADS, reloading, sprinting, crouching",
-		Default = true,
-		Flag = "Fust_EspTags",
-		Callback = function(v)
-			Esp.statusTags = v
-		end,
-	})
-	awareSec:ColorPicker({
-		Name = "Aiming-in colour",
-		Default = Color3.fromRGB(255, 170, 60),
-		Flag = "Fust_EspAdsCol",
-		DependsOn = "Fust_EspTags",
-		Callback = function(c)
-			Esp.adsColor = c
-		end,
-	})
-	awareSec:Toggle({
-		Name = "Aimed-at warning",
-		Description = "Red box + screen warning when someone aims in at you",
-		Default = true,
-		Flag = "Fust_EspAimWarn",
-		Callback = function(v)
-			Esp.aimWarn = v
-		end,
-	})
-	awareSec:Slider({
-		Name = "Warning cone",
-		Description = "How close to you their aim must be (degrees)",
-		Min = 2,
-		Max = 25,
-		Default = 8,
-		Increment = 1,
-		Flag = "Fust_EspAimCone",
-		DependsOn = "Fust_EspAimWarn",
-		Callback = function(v)
-			Esp.aimCone = v
-		end,
-	})
-	awareSec:ColorPicker({
-		Name = "Warning colour",
-		Default = Color3.fromRGB(255, 60, 60),
-		Flag = "Fust_EspAimWarnCol",
-		DependsOn = "Fust_EspAimWarn",
-		Callback = function(c)
-			Esp.aimWarnColor = c
-		end,
-	})
-	awareSec:Toggle({
-		Name = "Off-screen arrows",
-		Description = "Arrows toward players outside your view (Drawing mode)",
-		Default = true,
-		Flag = "Fust_EspArrows",
-		Callback = function(v)
-			Esp.offscreen = v
-		end,
-	})
-	awareSec:Slider({
-		Name = "Arrow radius",
-		Min = 80,
-		Max = 400,
-		Default = 220,
-		Increment = 10,
-		Flag = "Fust_EspArrowRad",
-		DependsOn = "Fust_EspArrows",
-		Callback = function(v)
-			Esp.offscreenRadius = v
 		end,
 	})
 
@@ -1507,6 +1404,75 @@ return function(deps)
 			end
 		end,
 	})
+	moveSec:Toggle({
+		Name = "Noclip",
+		Default = false,
+		Risky = true,
+		Flag = "Fust_Noclip",
+		Callback = function(v)
+			if Misc then
+				Misc.noclipEnabled = v
+				Misc:syncNoclip()
+			end
+		end,
+	})
+	moveSec:Toggle({
+		Name = "Noclip hold (N)",
+		Default = false,
+		Flag = "Fust_NoclipHold",
+		DependsOn = "Fust_Noclip",
+		Callback = function(v)
+			if Misc then
+				Misc.noclipHold = v
+				Misc:syncNoclip()
+			end
+		end,
+	})
+	moveSec:Toggle({
+		Name = "Noclip key",
+		Default = false,
+		Flag = "Fust_NoclipKey",
+		Mode = "Hold",
+		Keybind = Enum.KeyCode.N,
+		DependsOn = "Fust_NoclipHold",
+		Callback = function(v)
+			if Misc then
+				Misc.noclipKeyHeld = v
+				Misc:syncNoclip()
+			end
+		end,
+	})
+	moveSec:Slider({
+		Name = "Wall depth",
+		Min = 0.1,
+		Max = 2,
+		Default = 0.2,
+		Increment = 0.01,
+		Flag = "Fust_WallDepth",
+		DependsOn = "Fust_Noclip",
+		Callback = function(v)
+			if Misc then
+				Misc.wallDepth = v
+				Misc.wallDepthMax = math.max(v, Misc.wallDepthMin or 0.1)
+			end
+		end,
+	})
+	moveSec:Toggle({
+		Name = "Full noclip (FustBodyBlock)",
+		Default = false,
+		Risky = true,
+		Flag = "Fust_NoclipBodyBlock",
+		DependsOn = "Fust_Noclip",
+		Callback = function(v)
+			if Misc then
+				Misc.noclipUseBodyBlock = v
+				if Misc.noclipEnabled then
+					Misc:syncNoclip()
+				end
+			end
+		end,
+	})
+	moveSec:Label({ Text = "external: partial — torso/HRP collide, limbs off, Wall Depth phases core" })
 
 	local lightSec = worldTab:Section({ Name = "Custom lighting", Icon = "sun", Side = "Right" })
 	lightSec:Label({ Text = "Matches external.wtf time/brightness — FustSky ACM may flag." })
@@ -1742,6 +1708,8 @@ return function(deps)
 		"Fust_KillOn",
 		"Fust_Hitbox",
 		"Fust_SpeedOn",
+		"Fust_Noclip",
+		"Fust_NoclipHold",
 		"Fust_WallClimb",
 		"Fust_GunAuto",
 		"Fust_GunRapid",
@@ -1785,6 +1753,9 @@ return function(deps)
 			Misc.speedEnabled = false
 			Misc.hitboxEnabled = false
 			Misc.wallClimbEnabled = false
+			Misc.noclipEnabled = false
+			Misc.noclipKeyHeld = false
+			Misc:syncNoclip()
 			Misc.gunAuto = false
 			Misc.gunRapid = false
 			Misc.bowEnabled = false
