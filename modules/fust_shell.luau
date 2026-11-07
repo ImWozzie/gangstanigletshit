@@ -7,7 +7,7 @@ return function(deps)
 	local Misc = deps.Misc
 	local Exploit = deps.Exploit
 	local Presets = deps.Presets
-	local bundleVersion = deps.BundleVersion or "2.16.3"
+	local bundleVersion = deps.BundleVersion or "2.16.4"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false
@@ -1472,7 +1472,33 @@ return function(deps)
 			end
 		end,
 	})
-	moveSec:Label({ Text = "external: partial — torso/HRP collide, limbs off, Wall Depth phases core" })
+	moveSec:Toggle({
+		Name = "ATV / vehicle boost",
+		Default = true,
+		Flag = "Fust_NoclipAtv",
+		DependsOn = "Fust_Noclip",
+		Callback = function(v)
+			if Misc then
+				Misc.noclipAtvBoost = v
+				Misc.noclipVehicleColliders = v
+			end
+		end,
+	})
+	moveSec:Toggle({
+		Name = "Require vehicle seat",
+		Default = false,
+		Flag = "Fust_NoclipVehOnly",
+		DependsOn = "Fust_Noclip",
+		Callback = function(v)
+			if Misc then
+				Misc.noclipRequireVehicle = v
+				if Misc.noclipEnabled then
+					Misc:syncNoclip()
+				end
+			end
+		end,
+	})
+	moveSec:Label({ Text = "external: sit FustAtv DriverSeat — head off, wheel cols, Wall Depth" })
 
 	local lightSec = worldTab:Section({ Name = "Custom lighting", Icon = "sun", Side = "Right" })
 	lightSec:Label({ Text = "Matches external.wtf time/brightness — FustSky ACM may flag." })

@@ -69,6 +69,9 @@ return function(deps)
 		wallDepthMax = 0.2,
 		noclipUseBodyBlock = false,
 		noclipManaged = true,
+		noclipAtvBoost = true,
+		noclipRequireVehicle = false,
+		noclipVehicleColliders = true,
 		_noclipConn = nil,
 		_noclipDescConn = nil,
 		_noclipCharConn = nil,
@@ -465,6 +468,39 @@ return function(deps)
 		LowerTorso = true,
 		Torso = true,
 	}
+	local FUST_VEHICLE_ROOTS = {
+		FustAtvs = true,
+		FustMinicopters = true,
+		FustBoats = true,
+	}
+
+	local function fustVehicleFromHum(hum)
+		if not hum or not hum.SeatPart then
+			return nil
+		end
+		local model = hum.SeatPart:FindFirstAncestorOfClass("Model")
+		if not model or not model.Parent then
+			return nil
+		end
+		if not FUST_VEHICLE_ROOTS[model.Parent.Name] then
+			return nil
+		end
+		return model
+	end
+
+	local function vehicleColliderPart(part)
+		if not part or not part:IsA("BasePart") then
+			return false
+		end
+		local n = part.Name
+		if n == "Chassis" or n == "DriverSeat" or n == "PassengerSeat" then
+			return true
+		end
+		if n:find("Col", 1, true) or n:find("Collision", 1, true) then
+			return true
+		end
+		return false
+	end
 
 	local function restoreNoclip(self)
 		if not self._noclipOrig then
@@ -487,7 +523,7 @@ return function(deps)
 		table.clear(self._noclipOrig)
 	end
 
-	local function applyNoclipPart(self, part)
+	local function applyNoclipPart(self, part, hum, onVehicle)
 		if not part or not part:IsA("BasePart") then
 			return
 		end
@@ -501,8 +537,13 @@ return function(deps)
 				part.CollisionGroup = NOCLIP_GROUP
 			end)
 		end
-		-- Live external: HRP/Head/Torso keep CanCollide — only limbs/accessories off
 		if NOCLIP_CORE[part.Name] then
+			-- MCP on ATV: Head also off; torso/HRP stay solid
+			if part.Name == "Head" and onVehicle and self.noclipAtvBoost then
+				if part.CanCollide then
+					part.CanCollide = false
+				end
+			end
 			return
 		end
 		if part.CanCollide then
@@ -510,24 +551,55 @@ return function(deps)
 		end
 	end
 
-	local function applyNoclip(self, char)
-		if not char then
+	local function applyVehicleNoclip(self, vehicle)
+		if not vehicle or not self.noclipVehicleColliders then
 			return
 		end
-		for _, d in ipairs(char:GetDescendants()) do
-			if d:IsA("BasePart") then
-				applyNoclipPart(self, d)
+		for _, d in ipairs(vehicle:GetDescendants()) do
+			if vehicleColliderPart(d) and d.CanCollide then
+				applyNoclipPart(self, d, nil, true)
 			end
 		end
 	end
 
+	local function applyNoclip(self, char)
+		if not char then
+			return
+		end
+		local hum = char:FindFirstChildOfClass("Humanoid")
+		local vehicle = hum and fustVehicleFromHum(hum)
+		local onVehicle = vehicle ~= nil
+		if self.noclipRequireVehicle and not onVehicle then
+			return
+		end
+		for _, d in ipairs(char:GetDescendants()) do
+			if d:IsA("BasePart") then
+				applyNoclipPart(self, d, hum, onVehicle)
+			end
+		end
+		if onVehicle then
+			applyVehicleNoclip(self, vehicle)
+		end
+	end
+
 	local function wallDepthStep(self, char, hum, hrp)
+		local vehicle = fustVehicleFromHum(hum)
+		if self.noclipRequireVehicle and not vehicle then
+			return
+		end
 		local move = hum.MoveDirection
 		local dir = move.Magnitude >= 0.05 and move.Unit or hrp.CFrame.LookVector
 		local depth = math.clamp(self.wallDepth or 0.2, self.wallDepthMin or 0.1, self.wallDepthMax or 2)
+		if vehicle and self.noclipAtvBoost then
+			depth = depth * 1.35
+		end
 		local params = RaycastParams.new()
 		params.FilterType = Enum.RaycastFilterType.Exclude
-		params.FilterDescendantsInstances = { char }
+		local filter = { char }
+		if vehicle then
+			filter[#filter + 1] = vehicle
+		end
+		params.FilterDescendantsInstances = filter
 		local hit = Workspace:Raycast(hrp.Position, dir * (depth + 3), params)
 		if not hit then
 			return
@@ -553,7 +625,8 @@ return function(deps)
 				return
 			end
 			if inst:IsA("BasePart") then
-				applyNoclipPart(self, inst)
+				local hum = char:FindFirstChildOfClass("Humanoid")
+				applyNoclipPart(self, inst, hum, fustVehicleFromHum(hum) ~= nil)
 			end
 		end)
 		if noclipActive(self) then
