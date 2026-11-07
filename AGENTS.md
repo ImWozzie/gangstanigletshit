@@ -20,7 +20,7 @@ Design goal: **feature parity with external.wtf-class menus** (Drawing ESP/FOV, 
 | `modules/fust_esp.luau` | Player ESP — **Drawing** primary, PlayerGui fallback |
 | `modules/fust_aim.luau` | Aimbot, hitscan/manip HUD, combat tracers, **Drawing FOV** |
 | `modules/fust_world.luau` | World ESP (PlayerGui), custom lighting, freecam/tp3/zoom |
-| `modules/fust_misc.luau` | No recoil/spread (filtergc gun table), gun auto/rapid, hitbox, speed, farm/kill |
+| `modules/fust_misc.luau` | No recoil/spread, gun auto/rapid, hitbox, speed, **noclip**, farm/kill |
 | `modules/fust_exploit.luau` | **True silent** (`Shoot` dir/origin), wall manip, `Swing` redirect (`__namecall`) |
 | `modules/fust_presets.luau` | `Presets:applyExternalFull()` — one-shot external stack |
 | `modules/fust_shell.luau` | **UI only** — wires modules, panic, configs |

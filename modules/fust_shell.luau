@@ -7,7 +7,7 @@ return function(deps)
 	local Misc = deps.Misc
 	local Exploit = deps.Exploit
 	local Presets = deps.Presets
-	local bundleVersion = deps.BundleVersion or "2.16.0"
+	local bundleVersion = deps.BundleVersion or "2.16.1"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false
@@ -1404,6 +1404,44 @@ return function(deps)
 			end
 		end,
 	})
+	moveSec:Toggle({
+		Name = "Noclip",
+		Default = false,
+		Risky = true,
+		Flag = "Fust_Noclip",
+		Callback = function(v)
+			if Misc then
+				Misc.noclipEnabled = v
+				Misc:syncNoclip()
+			end
+		end,
+	})
+	moveSec:Toggle({
+		Name = "Noclip hold (N)",
+		Default = false,
+		Flag = "Fust_NoclipHold",
+		DependsOn = "Fust_Noclip",
+		Callback = function(v)
+			if Misc then
+				Misc.noclipHold = v
+				Misc:syncNoclip()
+			end
+		end,
+	})
+	moveSec:Toggle({
+		Name = "Noclip key",
+		Default = false,
+		Flag = "Fust_NoclipKey",
+		Mode = "Hold",
+		Keybind = Enum.KeyCode.N,
+		DependsOn = "Fust_NoclipHold",
+		Callback = function(v)
+			if Misc then
+				Misc.noclipKeyHeld = v
+				Misc:syncNoclip()
+			end
+		end,
+	})
 
 	local lightSec = worldTab:Section({ Name = "Custom lighting", Icon = "sun", Side = "Right" })
 	lightSec:Label({ Text = "Matches external.wtf time/brightness — FustSky ACM may flag." })
@@ -1639,6 +1677,8 @@ return function(deps)
 		"Fust_KillOn",
 		"Fust_Hitbox",
 		"Fust_SpeedOn",
+		"Fust_Noclip",
+		"Fust_NoclipHold",
 		"Fust_WallClimb",
 		"Fust_GunAuto",
 		"Fust_GunRapid",
@@ -1682,6 +1722,9 @@ return function(deps)
 			Misc.speedEnabled = false
 			Misc.hitboxEnabled = false
 			Misc.wallClimbEnabled = false
+			Misc.noclipEnabled = false
+			Misc.noclipKeyHeld = false
+			Misc:syncNoclip()
 			Misc.gunAuto = false
 			Misc.gunRapid = false
 			Misc.bowEnabled = false

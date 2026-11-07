@@ -60,6 +60,13 @@ return function(deps)
 		_wallLastJump = 0,
 		_wallConn = nil,
 
+		-- external.wtf-style noclip (local parts only)
+		noclipEnabled = false,
+		noclipHold = false, -- optional hold key path
+		noclipKeyHeld = false,
+		_noclipConn = nil,
+		_noclipOrig = nil, -- weak-key table
+
 		-- Gun mods: input + viewmodel kick zero (filtergc), not GunControl hooks
 		gunAuto = false,
 		gunRapid = false,
@@ -424,6 +431,84 @@ return function(deps)
 			)
 			hrp.CFrame = hrp.CFrame + Vector3.new(0, self.wallClimbSpeed * dt * 0.35, 0)
 		end)
+	end
+
+	local function noclipActive(self)
+		if not self.noclipEnabled then
+			return false
+		end
+		if self.noclipHold then
+			return self.noclipKeyHeld
+		end
+		return true
+	end
+
+	local function ensureNoclipCache(self)
+		if self._noclipOrig then
+			return
+		end
+		self._noclipOrig = setmetatable({}, { __mode = "k" })
+	end
+
+	local function restoreNoclip(self)
+		if not self._noclipOrig then
+			return
+		end
+		for part, was in pairs(self._noclipOrig) do
+			if part and part.Parent then
+				pcall(function()
+					part.CanCollide = was
+				end)
+			end
+		end
+		table.clear(self._noclipOrig)
+	end
+
+	local function applyNoclip(char)
+		if not char then
+			return
+		end
+		ensureNoclipCache(Misc)
+		for _, d in ipairs(char:GetDescendants()) do
+			if d:IsA("BasePart") then
+				local cache = Misc._noclipOrig
+				if cache[d] == nil then
+					cache[d] = d.CanCollide
+				end
+				if d.CanCollide then
+					d.CanCollide = false
+				end
+			end
+		end
+	end
+
+	function Misc:syncNoclip()
+		if self._noclipConn then
+			self._noclipConn:Disconnect()
+			self._noclipConn = nil
+		end
+		if not self.noclipEnabled then
+			restoreNoclip(self)
+			return
+		end
+		self._noclipConn = RunService.Stepped:Connect(function()
+			if not noclipActive(self) then
+				restoreNoclip(self)
+				return
+			end
+			local char = LOCAL.Character
+			if not char then
+				return
+			end
+			local hum = char:FindFirstChildOfClass("Humanoid")
+			if not hum or hum.Health <= 0 then
+				return
+			end
+			applyNoclip(char)
+		end)
+		if noclipActive(self) then
+			applyNoclip(LOCAL.Character)
+		end
 	end
 
 	local function zeroGunKick(state, recoilMul, spreadMul)
@@ -841,6 +926,7 @@ return function(deps)
 		self:syncSpeed()
 		self:syncHitbox()
 		self:syncWallClimb()
+		self:syncNoclip()
 		self:syncGunMods()
 		self:syncRecoilMods()
 		self:syncBowMods()
@@ -868,6 +954,8 @@ return function(deps)
 		self.speedEnabled = false
 		self.hitboxEnabled = false
 		self.wallClimbEnabled = false
+		self.noclipEnabled = false
+		self.noclipKeyHeld = false
 		self.gunAuto = false
 		self.gunRapid = false
 		self.noRecoil = false
@@ -892,6 +980,12 @@ return function(deps)
 			self._wallConn:Disconnect()
 			self._wallConn = nil
 		end
+		if self._noclipConn then
+			self._noclipConn:Disconnect()
+			self._noclipConn = nil
+		end
+		restoreNoclip(self)
+		self._noclipOrig = nil
 		if self._gunConn then
 			self._gunConn:Disconnect()
 			self._gunConn = nil
