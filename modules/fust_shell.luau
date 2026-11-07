@@ -8,7 +8,7 @@ return function(deps)
 	local Hud = deps.Hud
 	local Exploit = deps.Exploit
 	local Presets = deps.Presets
-	local bundleVersion = deps.BundleVersion or "2.20.0"
+	local bundleVersion = deps.BundleVersion or "2.22.0"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false
@@ -264,9 +264,7 @@ return function(deps)
 	})
 
 	local manipSec = aimTab:Section({ Name = "Manipulation", Icon = "zap", Side = "Left" })
-	manipSec:Label({
-		Text = "Camera burst + MANIP HUD (pair with Exploit for Shoot hook).",
-	})
+	manipSec:Label("Camera burst + MANIP HUD (pair with Exploit for Shoot hook).")
 	manipSec:Toggle({
 		Name = "Enabled",
 		Default = false,
@@ -584,7 +582,7 @@ return function(deps)
 	})
 
 	local exploitSec = aimTab:Section({ Name = "Exploit", Icon = "alert-triangle", Side = "Right" })
-	exploitSec:Label({ Text = "Shoot/Swing FireServer redirect + fullbright stack." })
+	exploitSec:Label("Shoot/Swing FireServer redirect + fullbright stack.")
 	if Exploit then
 		exploitSec:Toggle({
 			Name = "True silent",
@@ -808,7 +806,7 @@ return function(deps)
 	end })
 	visSec:Dropdown({
 		Name = "Box style",
-		Options = { "Full", "Corners" },
+		Options = { "Full", "Corners", "3D" },
 		Default = "Full",
 		Flag = "Fust_EspBoxStyle",
 		DependsOn = "Fust_EspBox",
@@ -1058,6 +1056,23 @@ return function(deps)
 		Esp.visTags = v
 	end })
 
+	local chamsSec = visTab:Section({ Name = "Chams", Icon = "user", Side = "Right" })
+	chamsSec:Toggle({ Name = "Chams", Description = "Filled body silhouette through walls (Drawing; no Highlights)", Default = false, Flag = "Fust_EspChams", Callback = function(v)
+		Esp.chams = v
+	end })
+	chamsSec:Slider({ Name = "Opacity", Min = 0.1, Max = 1, Default = 0.35, Increment = 0.05, Flag = "Fust_EspChamsAlpha", DependsOn = "Fust_EspChams", Callback = function(v)
+		Esp.chamsAlpha = v
+	end })
+	chamsSec:Slider({ Name = "Chams range", Min = 50, Max = 1000, Default = 300, Increment = 25, Flag = "Fust_EspChamsDist", DependsOn = "Fust_EspChams", Callback = function(v)
+		Esp.chamsDist = v
+	end })
+	chamsSec:ColorPicker({ Name = "Visible colour", Description = "Used when Visible colour is on", Default = Color3.fromRGB(120, 255, 170), Flag = "Fust_EspChamsVis", DependsOn = "Fust_EspChams", Callback = function(c)
+		Esp.chamsVisibleColor = c
+	end })
+	chamsSec:ColorPicker({ Name = "Hidden colour", Default = Color3.fromRGB(255, 80, 120), Flag = "Fust_EspChamsHid", DependsOn = "Fust_EspChams", Callback = function(c)
+		Esp.chamsHiddenColor = c
+	end })
+
 	local awareSec = visTab:Section({ Name = "Awareness", Icon = "crosshair", Side = "Left" })
 	awareSec:Toggle({ Name = "Facing line", Description = "Line from the head showing where they look", Default = true, Flag = "Fust_EspLook", Callback = function(v)
 		Esp.lookLine = v
@@ -1100,6 +1115,13 @@ return function(deps)
 	end })
 	awareSec:ColorPicker({ Name = "Arrow colour", Default = Color3.fromRGB(255, 120, 200), Flag = "Fust_EspArrowCol", DependsOn = "Fust_EspArrows", Callback = function(c)
 		Esp.arrowColor = c
+	end })
+
+	awareSec:Dropdown({ Name = "Friends", Description = "Roblox friends: own colour, hidden, or treated like anyone", Options = { "Colour", "Hide", "Off" }, Default = "Colour", Flag = "Fust_EspFriendMode", Callback = function(v)
+		Esp.friendMode = v
+	end })
+	awareSec:ColorPicker({ Name = "Friend colour", Default = Color3.fromRGB(110, 180, 255), Flag = "Fust_EspFriendCol", Callback = function(c)
+		Esp.friendColor = c
 	end })
 
 	local feedSec = visTab:Section({ Name = "Hit feedback", Icon = "bell", Side = "Left" })
@@ -1307,6 +1329,38 @@ return function(deps)
 		DependsOn = "Fust_W_Building",
 		Callback = function(v)
 			World.buildingMaxPct = v
+		end,
+	})
+	wBase:Toggle({
+		Name = "Raid cost",
+		Description = "C4 / satchels / rockets left, from the game's own raid table + live HP",
+		Default = true,
+		Flag = "Fust_W_RaidCost",
+		Callback = function(v)
+			World.raidCost = v
+		end,
+	})
+	wBase:Toggle({
+		Name = "Raid activity",
+		Description = "Lists explosives and rockets as they appear: type, distance, direction",
+		Default = false,
+		Flag = "Fust_W_RaidAlerts",
+		Callback = function(v)
+			if World.setRaidAlerts then
+				World:setRaidAlerts(v)
+			end
+		end,
+	})
+	wBase:Slider({
+		Name = "Raid activity lines",
+		Min = 1,
+		Max = 10,
+		Default = 5,
+		Increment = 1,
+		Flag = "Fust_W_RaidLines",
+		DependsOn = "Fust_W_RaidAlerts",
+		Callback = function(v)
+			World.raidAlertMax = v
 		end,
 	})
 
@@ -1759,10 +1813,10 @@ return function(deps)
 			end
 		end,
 	})
-	moveSec:Label({ Text = "external: sit FustAtv DriverSeat — head off, wheel cols, Wall Depth" })
+	moveSec:Label("external: sit FustAtv DriverSeat — head off, wheel cols, Wall Depth")
 
 	local lightSec = worldTab:Section({ Name = "Custom lighting", Icon = "sun", Side = "Right" })
-	lightSec:Label({ Text = "Matches external.wtf time/brightness — FustSky ACM may flag." })
+	lightSec:Label("Matches external.wtf time/brightness — FustSky ACM may flag.")
 	lightSec:Toggle({
 		Name = "Enabled",
 		Default = false,
@@ -2442,6 +2496,51 @@ return function(deps)
 		syncProfiles()
 	end)
 
+	local uiSec = setTab:Section({ Name = "Interface", Icon = "monitor", Side = "Right" })
+	uiSec:Toggle({
+		Name = "Watermark",
+		Description = "Name, FPS, ping and time in the corner",
+		Default = false,
+		Flag = "Fust_Watermark",
+		Callback = function(v)
+			pcall(function()
+				Window:SetWatermark(v)
+			end)
+		end,
+	})
+	local VISUAL_FLAGS = { "Fust_EspToggle", "Fust_WorldEsp", "Fust_Radar" }
+	local hiddenVisuals = nil
+	uiSec:Keybind({
+		Name = "Hide visuals key",
+		Description = "Press: ESP, world ESP and radar off. Press again: back as they were.",
+		Default = nil,
+		Flag = "Fust_HideVisualsKey",
+		Callback = function()
+			if hiddenVisuals then
+				for _, flag in ipairs(hiddenVisuals) do
+					local el = Prism.Flags[flag]
+					if el and el.Set then
+						pcall(function()
+							el:Set(true)
+						end)
+					end
+				end
+				hiddenVisuals = nil
+				return
+			end
+			hiddenVisuals = {}
+			for _, flag in ipairs(VISUAL_FLAGS) do
+				local el = Prism.Flags[flag]
+				if el and el.Value == true and el.Set then
+					hiddenVisuals[#hiddenVisuals + 1] = flag
+					pcall(function()
+						el:Set(false)
+					end)
+				end
+			end
+		end,
+	})
+
 	local safeSec = setTab:Section({ Name = "Safety", Icon = "shield", Side = "Right" })
 	if Presets and Presets.applyExternalFull then
 		safeSec:Button({
@@ -2514,9 +2613,6 @@ return function(deps)
 
 	local bundle = {}
 	function bundle.destroy()
-		if Hud and Hud.destroy then
-			pcall(Hud.destroy, Hud)
-		end
 		if Exploit then
 			Exploit:destroy()
 		end
@@ -2543,7 +2639,6 @@ return function(deps)
 	bundle.World = World
 	bundle.Misc = Misc
 	bundle.Exploit = Exploit
-	bundle.Hud = Hud
 	bundle.Presets = Presets
 	bundle.applyExternalFull = Presets and Presets.applyExternalFull
 	bundle.panic = panic
