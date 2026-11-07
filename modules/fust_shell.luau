@@ -7,7 +7,7 @@ return function(deps)
 	local Misc = deps.Misc
 	local Exploit = deps.Exploit
 	local Presets = deps.Presets
-	local bundleVersion = deps.BundleVersion or "2.16.1"
+	local bundleVersion = deps.BundleVersion or "2.16.2"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false
@@ -1442,6 +1442,35 @@ return function(deps)
 			end
 		end,
 	})
+	moveSec:Toggle({
+		Name = "FustBodyBlock group",
+		Default = true,
+		Flag = "Fust_NoclipBodyBlock",
+		DependsOn = "Fust_Noclip",
+		Callback = function(v)
+			if Misc then
+				Misc.noclipUseBodyBlock = v
+				if Misc.noclipEnabled then
+					Misc:syncNoclip()
+				end
+			end
+		end,
+	})
+	moveSec:Slider({
+		Name = "Noclip depth",
+		Min = 0.05,
+		Max = 0.5,
+		Default = 0.2,
+		Increment = 0.01,
+		Flag = "Fust_NoclipDepth",
+		DependsOn = "Fust_Noclip",
+		Callback = function(v)
+			if Misc then
+				Misc.noclipDepth = v
+			end
+		end,
+	})
+	moveSec:Label({ Text = "external: Depth 0.2, Min 0.1 — uses game FustBodyBlock + phase step" })
 
 	local lightSec = worldTab:Section({ Name = "Custom lighting", Icon = "sun", Side = "Right" })
 	lightSec:Label({ Text = "Matches external.wtf time/brightness — FustSky ACM may flag." })

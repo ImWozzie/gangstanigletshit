@@ -60,12 +60,19 @@ return function(deps)
 		_wallLastJump = 0,
 		_wallConn = nil,
 
-		-- external.wtf-style noclip (local parts only)
+		-- external.wtf noclip — Depth 0.2 + FustBodyBlock (no collide vs Default) + CanCollide off
 		noclipEnabled = false,
-		noclipHold = false, -- optional hold key path
+		noclipHold = false,
 		noclipKeyHeld = false,
+		noclipDepth = 0.2,
+		noclipMinDepth = 0.1,
+		noclipMaxDepth = 0.2,
+		noclipUseBodyBlock = true,
+		noclipManaged = true,
 		_noclipConn = nil,
-		_noclipOrig = nil, -- weak-key table
+		_noclipDescConn = nil,
+		_noclipCharConn = nil,
+		_noclipOrig = nil,
 
 		-- Gun mods: input + viewmodel kick zero (filtergc), not GunControl hooks
 		gunAuto = false,
@@ -450,6 +457,8 @@ return function(deps)
 		self._noclipOrig = setmetatable({}, { __mode = "k" })
 	end
 
+	local NOCLIP_GROUP = "FustBodyBlock"
+
 	local function restoreNoclip(self)
 		if not self._noclipOrig then
 			return
@@ -457,28 +466,84 @@ return function(deps)
 		for part, was in pairs(self._noclipOrig) do
 			if part and part.Parent then
 				pcall(function()
-					part.CanCollide = was
+					if type(was) == "table" then
+						part.CanCollide = was.cc
+						if was.group then
+							part.CollisionGroup = was.group
+						end
+					else
+						part.CanCollide = was
+					end
 				end)
 			end
 		end
 		table.clear(self._noclipOrig)
 	end
 
-	local function applyNoclip(char)
+	local function applyNoclipPart(self, part)
+		if not part or not part:IsA("BasePart") then
+			return
+		end
+		ensureNoclipCache(self)
+		local cache = self._noclipOrig
+		if cache[part] == nil then
+			cache[part] = { cc = part.CanCollide, group = part.CollisionGroup }
+		end
+		if self.noclipUseBodyBlock then
+			pcall(function()
+				part.CollisionGroup = NOCLIP_GROUP
+			end)
+		end
+		if part.CanCollide then
+			part.CanCollide = false
+		end
+	end
+
+	local function applyNoclip(self, char)
 		if not char then
 			return
 		end
-		ensureNoclipCache(Misc)
 		for _, d in ipairs(char:GetDescendants()) do
 			if d:IsA("BasePart") then
-				local cache = Misc._noclipOrig
-				if cache[d] == nil then
-					cache[d] = d.CanCollide
-				end
-				if d.CanCollide then
-					d.CanCollide = false
-				end
+				applyNoclipPart(self, d)
 			end
+		end
+	end
+
+	local function depthStep(self, char, hum, hrp)
+		local move = hum.MoveDirection
+		if move.Magnitude < 0.05 then
+			return
+		end
+		local depth = math.clamp(self.noclipDepth or 0.2, self.noclipMinDepth or 0.1, self.noclipMaxDepth or 0.2)
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances = { char }
+		local dir = move.Unit
+		local hit = Workspace:Raycast(hrp.Position, dir * (depth + 2), params)
+		if hit and hit.Distance <= depth + 0.75 then
+			hrp.CFrame = hrp.CFrame + dir * depth
+		end
+	end
+
+	local function bindNoclipCharacter(self, char)
+		if self._noclipDescConn then
+			self._noclipDescConn:Disconnect()
+			self._noclipDescConn = nil
+		end
+		if not char then
+			return
+		end
+		self._noclipDescConn = char.DescendantAdded:Connect(function(inst)
+			if not noclipActive(self) then
+				return
+			end
+			if inst:IsA("BasePart") then
+				applyNoclipPart(self, inst)
+			end
+		end)
+		if noclipActive(self) then
+			applyNoclip(self, char)
 		end
 	end
 
@@ -487,11 +552,23 @@ return function(deps)
 			self._noclipConn:Disconnect()
 			self._noclipConn = nil
 		end
+		if self._noclipCharConn then
+			self._noclipCharConn:Disconnect()
+			self._noclipCharConn = nil
+		end
+		if self._noclipDescConn then
+			self._noclipDescConn:Disconnect()
+			self._noclipDescConn = nil
+		end
 		if not self.noclipEnabled then
 			restoreNoclip(self)
 			return
 		end
-		self._noclipConn = RunService.Stepped:Connect(function()
+		self._noclipCharConn = LOCAL.CharacterAdded:Connect(function(char)
+			bindNoclipCharacter(self, char)
+		end)
+		bindNoclipCharacter(self, LOCAL.Character)
+		self._noclipConn = RunService.Heartbeat:Connect(function()
 			if not noclipActive(self) then
 				restoreNoclip(self)
 				return
@@ -501,14 +578,15 @@ return function(deps)
 				return
 			end
 			local hum = char:FindFirstChildOfClass("Humanoid")
-			if not hum or hum.Health <= 0 then
+			local hrp = char:FindFirstChild("HumanoidRootPart")
+			if not hum or not hrp or hum.Health <= 0 then
 				return
 			end
-			applyNoclip(char)
+			applyNoclip(self, char)
+			if self.noclipManaged then
+				depthStep(self, char, hum, hrp)
+			end
 		end)
-		if noclipActive(self) then
-			applyNoclip(LOCAL.Character)
-		end
 	end
 
 	local function zeroGunKick(state, recoilMul, spreadMul)
@@ -983,6 +1061,14 @@ return function(deps)
 		if self._noclipConn then
 			self._noclipConn:Disconnect()
 			self._noclipConn = nil
+		end
+		if self._noclipCharConn then
+			self._noclipCharConn:Disconnect()
+			self._noclipCharConn = nil
+		end
+		if self._noclipDescConn then
+			self._noclipDescConn:Disconnect()
+			self._noclipDescConn = nil
 		end
 		restoreNoclip(self)
 		self._noclipOrig = nil
