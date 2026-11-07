@@ -7,7 +7,7 @@ return function(deps)
 	local Misc = deps.Misc
 	local Exploit = deps.Exploit
 	local Presets = deps.Presets
-	local bundleVersion = deps.BundleVersion or "2.16.4"
+	local bundleVersion = deps.BundleVersion or "2.18.1"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false

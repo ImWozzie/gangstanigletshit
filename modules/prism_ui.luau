@@ -1185,7 +1185,18 @@ local tickers = {}
 -- Library-wide connections; a re-execution disconnects the old copy's.
 Prism._libConns = {}
 
+-- Paused while every window is closed and no intro is playing: nothing they
+-- animate is on screen then.
+local function anyWindowShown()
+ if Prism._introBusy then return true end
+ for _, w in ipairs(Prism._windows or {}) do
+ if w.Visible or (w.Root and w.Root.Visible) then return true end
+ end
+ return Prism._windows == nil or #Prism._windows == 0
+end
+
 table.insert(Prism._libConns, RunService.Heartbeat:Connect(function()
+ if not anyWindowShown() then return end
  local t = os.clock()
  for owner, fn in pairs(tickers) do
  fn(t, owner)
@@ -2516,13 +2527,18 @@ local function addShine(fill)
  return band
 end
 
+local shineWasX
 tickers[shines] = function(t)
  local p = t % SHINE_PERIOD
  local x = p < SHINE_SWEEP and lerp(-0.6, 1.6, p / SHINE_SWEEP) or -0.6
+ local on = Prism.ShineEnabled and not Prism.ReduceMotion
+ -- Between sweeps the band rests off to the left: nothing to write.
+ local moved = x ~= shineWasX
+ shineWasX = x
  for band in pairs(shines) do
  if band.Parent then
- band.Visible = Prism.ShineEnabled and not Prism.ReduceMotion
- band.Position = UDim2.fromScale(x, 0)
+ if band.Visible ~= on then band.Visible = on end
+ if on and moved then band.Position = UDim2.fromScale(x, 0) end
  else
  shines[band] = nil
  end
@@ -3261,6 +3277,7 @@ function Section:Toggle(opts)
  local listening = false
  local lastBind = 0
  local showChip = opts.Keybind ~= nil or opts.ShowKey == true
+ toggle._defaultKey = opts.Keybind ~= nil
 
  -- Label takes whatever the controls on the right leave free.
  local function fitLabel()
@@ -4824,7 +4841,7 @@ function Prism:CreateWindow(opts)
  table.insert(Prism._windows, self)
  self.Visible = true
  self.Title = opts.Title or "Prism"
- self.ToggleKey = opts.ToggleKey or Enum.KeyCode.RightShift
+ self.ToggleKey = opts.ToggleKey or Enum.KeyCode.LeftAlt
  -- Configs live in / so every game keeps its own
  -- set. PerGameConfigs = false shares one folder across games.
  self.ConfigFolder = opts.ConfigFolder or "Prism"
@@ -5080,12 +5097,17 @@ function Prism:CreateWindow(opts)
  end
  local s = self:_layoutScale()
  local y = (active.Button.AbsolutePosition.Y - sidebar.AbsolutePosition.Y) / s
+ local listTop = (self.TabList.AbsolutePosition.Y - sidebar.AbsolutePosition.Y) / s
+ -- Settled and nothing scrolled: skip the writes.
+ if indicatorY == y and self._indicatorTop == listTop then return end
+ self._indicatorTop = listTop
  indicatorY = indicatorY and lerp(indicatorY, y, math.min(1, dt * 16)) or y
+ if math.abs(indicatorY - y) < 0.25 then indicatorY = y end
  self.TabIndicator.Position = UDim2.fromOffset(8, indicatorY)
  -- Hide it if the active tab is scrolled out of the list.
- local listTop = (self.TabList.AbsolutePosition.Y - sidebar.AbsolutePosition.Y) / s
  local listBottom = listTop + self.TabList.AbsoluteSize.Y / s
- self.TabIndicator.Visible = indicatorY > listTop - 20 and indicatorY < listBottom
+ local show = indicatorY > listTop - 20 and indicatorY < listBottom
+ if self.TabIndicator.Visible ~= show then self.TabIndicator.Visible = show end
  end))
 
  -- Profile card
@@ -5583,6 +5605,7 @@ end
 
 function Window:SetVisible(visible)
  self.Visible = visible
+ if visible and self._depsPass then pcall(self._depsPass, self) end
  self:_applyBlur()
  if visible and self._pill then self._pill.Visible = false end
  if visible then
@@ -6575,6 +6598,7 @@ function Window:SetKeybindList(visible)
 end
 
 function Window:_refreshKeybinds()
+ if self._syncKeyRows then self._syncKeyRows() end
  local panel = self._keybindList
  if not panel then return end
  for _, c in ipairs(panel:GetChildren()) do
@@ -6784,6 +6808,78 @@ end
 -- Configs save / load / delete, export / import, autoload
 -- Info version, executor, game, players, FPS, ping, session time
 -- Session rejoin, copy server id, unload
+-- ============================================================================
+-- KEYBINDS
+-- ============================================================================
+--  Window:KeybindsSection(tab, { Name, Icon, Side }) -> Section
+--  Every keybind in one place: the menu key, then each toggle that has a key
+--  (or ships with one). Rows mirror their toggle both ways - rebind here or
+--  right-click the toggle. "Show all toggles" lists every bindable toggle.
+--  Call it after the tabs whose toggles it should list.
+function Window:KeybindsSection(tab, opts)
+ opts = opts or {}
+ local sec = tab:Section({ Name = opts.Name or "Keybinds", Icon = opts.Icon or "keyboard", Side = opts.Side or "Left" })
+ sec:Keybind({
+ Name = "Menu key",
+ Description = "Shows and hides the window.",
+ Default = self.ToggleKey,
+ Flag = "Prism_MenuKey",
+ ChangedCallback = function(key) if key then self:SetToggleKey(key) end end,
+ })
+ local showAll = false
+ local rows = {}
+ for _, t in ipairs(self._bindables) do
+ local row = sec:Keybind({
+ Name = t.Name or t:GetName(),
+ Description = (t.Mode == "Hold") and "Hold: on while the key is down." or "Press to switch on / off.",
+ Default = t.Key,
+ ChangedCallback = function(key) t:SetKey(key) end,
+ })
+ row._mirrorOf = t
+ rows[#rows + 1] = { row = row, t = t }
+ end
+ local function sync()
+ for _, r in ipairs(rows) do
+ if r.row.Value ~= r.t.Key then r.row:Set(r.t.Key, true) end
+ local show = showAll or r.t.Key ~= nil or r.t._defaultKey == true
+ if r.shown ~= show then
+ r.shown = show
+ r.row:SetVisible(show)
+ end
+ end
+ end
+ self._syncKeyRows = sync
+ sec:Toggle({
+ Name = "Show all toggles",
+ HideFromList = true,
+ Description = "List every toggle so any of them can get a key.",
+ Callback = function(on)
+ showAll = on
+ sync()
+ end,
+ })
+ sec:Button({
+ Name = "Clear all keybinds",
+ Description = "Removes every toggle key. The menu key stays.",
+ Confirm = true,
+ Callback = function()
+ for _, r in ipairs(rows) do r.t:SetKey(nil) end
+ sync()
+ end,
+ })
+ if self.SetKeybindList then
+ sec:Toggle({
+ Name = "Keybind list overlay",
+ HideFromList = true,
+ Description = "Small on-screen list of bound keys and their state.",
+ Flag = "Prism_KeybindListMgr",
+ Callback = function(on) self:SetKeybindList(on) end,
+ })
+ end
+ sync()
+ return sec
+end
+
 -- ============================================================================
 
 function Window:SettingsTab(opts)
@@ -9195,13 +9291,14 @@ end
 function Window:_keyUsers(key, except)
  local out = {}
  if not key then return out end
+ local mirror = except and except._mirrorOf
  for _, t in ipairs(self._bindables) do
- if t ~= except and t.Key == key then
+ if t ~= except and t ~= mirror and t.Key == key then
  table.insert(out, { Name = t.Name or t:GetName(), Clear = function() t:SetKey(nil) end })
  end
  end
  for _, k in ipairs(self._keybinds) do
- if k ~= except and not k._isMenu and k.Value == key and k.Frame.Parent then
+ if k ~= except and not k._isMenu and not k._mirrorOf and k.Value == key and k.Frame.Parent then
  table.insert(out, { Name = k:GetName(), Clear = function() k:Set(nil) end })
  end
  end
@@ -9314,8 +9411,7 @@ function Window:_depends(el, opts)
  })
  if self._depLoop then return end
  self._depLoop = true
- task.spawn(function()
- while self.Gui.Parent do
+ function self:_depsPass()
  for _, d in ipairs(self._deps) do
  local met = dependencyMet(d.Rule)
  if met ~= d.Last then
@@ -9329,6 +9425,11 @@ function Window:_depends(el, opts)
  end
  end
  end
+ end
+ task.spawn(function()
+ while self.Gui.Parent do
+ -- Only the open menu shows these rows; SetVisible runs a pass on open.
+ if self.Visible then self:_depsPass() end
  task.wait(0.1)
  end
  end)

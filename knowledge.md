@@ -182,3 +182,69 @@ Live `getgenv().vaultFust` reverse while farmAura was on — full write-up in **
 - Say what you are about to run before running it; keep each run small and reversible, and clean up (destroy GUIs, disconnect) in the same run.
 - Test on an alt / private server when possible.
 - After any kick, flag or ban: stop, write down what ran, add it to the incident log above.
+
+---
+
+## 8. external.wtf feature survey (2026-11-06)
+
+Seen loaded in a live session (CoreGui ScreenGui with a randomised name, ~2,000 elements). **Menu labels only were read — no code was taken.** Used as a feature checklist.
+
+| Area | external.wtf has | Our bundle (v3.0.0) |
+|------|------------------|---------------------|
+| Player ESP | boxes (corner), box fill, black outline, skeleton, names, distance, tracers, health bar + number, weapon ESP, distance fade, flags, visible / hidden colours, ally colour, AI (NPC) targets, "redraw every N frames" | all of these (`fust_esp`); our update-rate slider is the redraw knob |
+| Radar | top-right, size, range, offsets, rotate with camera, teammates, edge markers | `fust_hud` radar |
+| Nodes / loot bags / traps | resources with node HP %, ground piles, loot bags, trap ESP | `fust_world` (live HP text since v3.0.0) |
+| Inventory viewer | hotbar above heads | Misc → Inv viewer (existing) |
+| Staff detector | detect staff, alert on join, extra names, scan now | `fust_hud` staff detector |
+| Watermark | name / FPS / ping | Prism watermark (Settings) |
+| Crosshair | custom crosshair | aim module crosshair (existing) |
+| **Not ported** | silent aim with wall manipulation, hit chance, no recoil / no spread / no camera shake, auto farm | combat mods — out of scope (AVOID.md / AGENTS.md) |
+| **Not ported** | world tint, no fog, custom lighting, xray, third person, freecam | MotionSync `{lt}` / `{xr…}` / `{tp,cm}` detections and the 2026-11-06 permanent ban (AVOID.md) |
+
+---
+
+## 9. Ballistics (game data, 2026-11-06)
+
+Read from the decompiled `ReplicatedStorage.Fust.Items` and `PlayerScripts.FustCombat` (no `require`).
+Guns and arrows are **projectiles**: spawned on the shooter's client along the camera look direction,
+with constant speed and their own downward gravity. Attachments don't change speed (every `MODS.speed` is 1).
+
+### Guns — `speed` (studs/s), `gravity` (studs/s², missing = game default **50**)
+
+| ItemId | Name | speed | gravity | rate | pellets |
+|---|---|---|---|---|---|
+| `revolver` | Revolver | 950 | 50 | 0.22 | 1 |
+| `semi_auto_pistol` | Semi-Auto Pistol | 900 | 50 | 0.13 | 1 |
+| `service_pistol` | Service Pistol | 950 | 50 | 0.15 | 1 |
+| `high_caliber_revolver` | High Caliber Revolver | 1100 | 50 | 0.35 | 1 |
+| `custom_smg` | Custom SMG | 900 | 8 | 0.1 | 1 |
+| `hunt_smg` | Dino Hunt SMG | 900 | 8 | 0.1 | 1 |
+| `tactical_smg` | Tactical SMG | 950 | 8 | 0.085 | 1 |
+| `drum_smg` | Drum SMG | 880 | 8 | 0.095 | 1 |
+| `lever_carbine` | Lever Carbine | 1250 | 50 | 0.6 | 1 |
+| `semi_auto_rifle` | Semi-Automatic Rifle | 1425 | 50 | 0.175 | 1 |
+| `assault_rifle` | Assault Rifle | 1350 | 50 | 0.133 | 1 |
+| `scar` | SCAR | 1450 | 50 | 0.16 | 1 |
+| `m249` | M249 | 1400 | 50 | 0.12 | 1 |
+| `bolt_action_rifle` | Bolt Action Rifle | 2600 | 5 | 1.5 | 1 |
+| `lr_sniper` | LR Sniper Rifle | 3000 | 4 | 1.8 | 1 |
+| `pipe_shotgun` | Pipe Shotgun | 560 | 50 | 0.9 | 8 |
+| `pump_shotgun` | Pump Shotgun | 560 | 50 | 0.9 | 9 |
+| `double_barrel` | Double Barrel Shotgun | 520 | 50 | 0.25 | 10 |
+| `rocket_launcher` | Rocket Launcher | 80 | 50 | 1.5 | 1 |
+
+### Bows — `FustCombat` constants + per-bow spec table in Items
+
+`arrow speed = (speedBase + speedCharge) * (charge * 125 + 95) / 220`, `charge = clamp(drawn / drawTime, 0.15, 1)`.
+
+| ItemId | speedBase | speedCharge | full speed | gravity | drawTime |
+|---|---|---|---|---|---|
+| `hunting_bow` (defaults) | 95 | 125 | 220 | 50 | 0.8 s |
+| `compound_bow` | 120 | 170 | 290 | 40 | 1.1 s |
+| `crossbow` | 320 | 0 | 320 | 28 | 0 (loaded) |
+
+### Target movement (live, other players on this client)
+
+- `Humanoid.FloorMaterial` and `GetState()` replicate for other players; seated and dead players read `Air`, so use the state (`Freefall` / `Jumping`) for "airborne".
+- `AssemblyLinearVelocity` of other players is noisy; velocity measured from their on-screen position changes (smoothed) is steadier.
+
