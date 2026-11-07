@@ -7,7 +7,7 @@
   Re-run to refresh all modules from GitHub. Update only esp/aim/shell/prism on GitHub independently.
 ]]
 
-local BUNDLE_VERSION = "2.9.8"
+local BUNDLE_VERSION = "2.15.0"
 local CACHE_BUST = tostring(os.clock()):gsub("%.", "")
 
 local MANIFEST_URL = "https://raw.githubusercontent.com/ImWozzie/gangstanigletshit/main/manifest.luau"
@@ -21,6 +21,8 @@ local DEFAULT_MANIFEST = {
 		aim = "modules/fust_aim.luau",
 		world = "modules/fust_world.luau",
 		misc = "modules/fust_misc.luau",
+		exploit = "modules/fust_exploit.luau",
+		presets = "modules/fust_presets.luau",
 		shell = "modules/fust_shell.luau",
 	},
 }
@@ -100,6 +102,7 @@ local espFactory = loadModule(repo, branch, paths.esp, "esp")
 local aimFactory = loadModule(repo, branch, paths.aim, "aim")
 local worldFactory = paths.world and loadModule(repo, branch, paths.world, "world") or nil
 local miscFactory = paths.misc and loadModule(repo, branch, paths.misc, "misc") or nil
+local exploitFactory = paths.exploit and loadModule(repo, branch, paths.exploit, "exploit") or nil
 local shellFactory = loadModule(repo, branch, paths.shell, "shell")
 
 local Esp = espFactory(deps)
@@ -117,6 +120,14 @@ deps.Aim = Aim
 deps.World = World
 deps.Misc = Misc
 
+local Exploit = exploitFactory and exploitFactory(deps)
+	or { destroy = function() end, syncHook = function() end, applyExternalExploitPreset = function() end }
+deps.Exploit = Exploit
+
+local presetsFactory = paths.presets and loadModule(repo, branch, paths.presets, "presets") or nil
+local Presets = presetsFactory and presetsFactory(deps) or { applyExternalFull = function() end }
+deps.Presets = Presets
+
 local bundle = shellFactory(deps)
 
 env.__PrismLibrary = Prism
@@ -124,6 +135,8 @@ env.__FustEsp = Esp
 env.__FustAim = Aim
 env.__FustWorld = World
 env.__FustMisc = Misc
+env.__FustExploit = Exploit
+env.__FustPresets = Presets
 env.__FustBundle = bundle
 env.__FustManifest = manifest
 env.__FustBundleVersion = BUNDLE_VERSION

@@ -5,7 +5,9 @@ return function(deps)
 	local Aim = deps.Aim
 	local World = deps.World
 	local Misc = deps.Misc
-	local bundleVersion = deps.BundleVersion or "2.9.8"
+	local Exploit = deps.Exploit
+	local Presets = deps.Presets
+	local bundleVersion = deps.BundleVersion or "2.15.0"
 
 	Prism.ReduceMotion = true
 	Prism.Sounds = false
@@ -49,11 +51,11 @@ return function(deps)
 		end,
 	})
 	aimSec:Toggle({
-		Name = "Instant",
+		Name = "Hitscan",
 		Default = false,
 		Flag = "Fust_InstantAim",
 		Callback = function(v)
-			Aim.instantAim = v
+			Aim:setHitscan(v)
 		end,
 	})
 	aimSec:Slider({
@@ -260,6 +262,240 @@ return function(deps)
 		end,
 	})
 
+	local manipSec = aimTab:Section({ Name = "Manipulation", Icon = "zap", Side = "Left" })
+	manipSec:Label({
+		Text = "Camera burst + MANIP HUD (pair with Exploit for Shoot hook).",
+	})
+	manipSec:Toggle({
+		Name = "Enabled",
+		Default = false,
+		Risky = true,
+		Flag = "Fust_Manip",
+		DependsOn = "Fust_SilentOn",
+		Callback = function(v)
+			Aim.manip = v
+		end,
+	})
+	manipSec:Slider({
+		Name = "Strength",
+		Min = 1,
+		Max = 2,
+		Default = 1.35,
+		Increment = 0.05,
+		Flag = "Fust_ManipStr",
+		DependsOn = "Fust_Manip",
+		Callback = function(v)
+			Aim.manipStrength = v
+		end,
+	})
+	manipSec:Slider({
+		Name = "Burst steps",
+		Min = 1,
+		Max = 8,
+		Default = 4,
+		Increment = 1,
+		Flag = "Fust_SilentBurst",
+		DependsOn = "Fust_Manip",
+		Callback = function(v)
+			Aim.silentBurstSteps = v
+		end,
+	})
+	manipSec:Slider({
+		Name = "Hold after shot (ms)",
+		Min = 0,
+		Max = 250,
+		Default = 100,
+		Increment = 5,
+		Flag = "Fust_SilentHold",
+		DependsOn = "Fust_SilentOn",
+		Callback = function(v)
+			Aim.silentHoldMs = v
+		end,
+	})
+	manipSec:Slider({
+		Name = "Snap cap (deg)",
+		Min = 6,
+		Max = 45,
+		Default = 22,
+		Increment = 1,
+		Flag = "Fust_SilentSnap",
+		DependsOn = "Fust_Manip",
+		Callback = function(v)
+			Aim.silentSnapDeg = v
+		end,
+	})
+	manipSec:Slider({
+		Name = "Manip max dist",
+		Min = 1,
+		Max = 30,
+		Default = 5,
+		Increment = 0.5,
+		Flag = "Fust_ManipDist",
+		DependsOn = "Fust_Manip",
+		Callback = function(v)
+			Aim.manipMaxDistance = v
+		end,
+	})
+	manipSec:Toggle({
+		Name = "MANIP % HUD",
+		Default = false,
+		Flag = "Fust_ManipHud",
+		DependsOn = "Fust_Manip",
+		Callback = function(v)
+			Aim.showManipHud = v
+			Aim:syncBind()
+		end,
+	})
+
+	local hitSec = aimTab:Section({ Name = "Hit scan", Icon = "target", Side = "Right" })
+	hitSec:Toggle({
+		Name = "Edge aim",
+		Default = false,
+		Flag = "Fust_HitEdge",
+		Callback = function(v)
+			Aim.hitScanEdgeAim = v
+		end,
+	})
+	hitSec:Slider({
+		Name = "Keep part %",
+		Min = 0,
+		Max = 100,
+		Default = 45,
+		Increment = 1,
+		Flag = "Fust_HitKeep",
+		DependsOn = "Fust_HitEdge",
+		Callback = function(v)
+			Aim.hitScanKeepPart = v / 100
+		end,
+	})
+	hitSec:Toggle({
+		Name = "Multi-point",
+		Default = false,
+		Flag = "Fust_HitMulti",
+		Callback = function(v)
+			Aim.hitScanMultiPoint = v
+		end,
+	})
+	hitSec:Toggle({
+		Name = "Limbs",
+		Default = false,
+		Flag = "Fust_HitLimbs",
+		Callback = function(v)
+			Aim.hitScanLimbs = v
+		end,
+	})
+
+	local tracerSec = aimTab:Section({ Name = "Combat tracers", Icon = "minus", Side = "Right" })
+	tracerSec:Toggle({
+		Name = "Enabled",
+		Default = false,
+		Flag = "Fust_CombatTrace",
+		Callback = function(v)
+			Aim.combatTracers = v
+			Aim:syncBind()
+		end,
+	})
+	tracerSec:Slider({
+		Name = "Width",
+		Min = 1,
+		Max = 6,
+		Default = 1,
+		Flag = "Fust_TraceW",
+		DependsOn = "Fust_CombatTrace",
+		Callback = function(v)
+			Aim.tracerWidth = v
+		end,
+	})
+	tracerSec:Slider({
+		Name = "Life (ms)",
+		Min = 50,
+		Max = 1200,
+		Default = 400,
+		Increment = 10,
+		Flag = "Fust_TraceLife",
+		DependsOn = "Fust_CombatTrace",
+		Callback = function(v)
+			Aim.tracerLifeMs = v
+		end,
+	})
+	tracerSec:ColorPicker({
+		Name = "Colour",
+		Default = Color3.fromRGB(255, 120, 200),
+		Flag = "Fust_TraceCol",
+		DependsOn = "Fust_CombatTrace",
+		Callback = function(c)
+			Aim.tracerColor = c
+		end,
+	})
+
+	manipSec:Button({
+		Name = "Load external combat preset",
+		Callback = function()
+			Aim:applyExternalCombatPreset()
+			pcall(function()
+				Prism:Notify({
+					Title = "Combat",
+					Content = "Silent + hitscan + manip (camera path)",
+					Type = "Info",
+					Duration = 3,
+				})
+			end)
+		end,
+	})
+
+	local exploitSec = aimTab:Section({ Name = "Exploit", Icon = "alert-triangle", Side = "Right" })
+	exploitSec:Label({ Text = "Shoot/Swing FireServer redirect + fullbright stack." })
+	if Exploit then
+		exploitSec:Toggle({
+			Name = "True silent",
+			Default = false,
+			Risky = true,
+			Flag = "Fust_TrueSilent",
+			Callback = function(v)
+				Exploit.trueSilent = v
+				Exploit:syncHook()
+			end,
+		})
+		exploitSec:Toggle({
+			Name = "Wall manip",
+			Default = false,
+			Risky = true,
+			Flag = "Fust_WallManip",
+			Callback = function(v)
+				Exploit.wallManip = v
+				Exploit:syncHook()
+			end,
+		})
+		exploitSec:Toggle({
+			Name = "Swing redirect",
+			Default = false,
+			Risky = true,
+			Flag = "Fust_SwingHook",
+			Callback = function(v)
+				Exploit.swingRedirect = v
+				Exploit:syncHook()
+			end,
+		})
+		exploitSec:Slider({
+			Name = "Wall peek studs",
+			Min = 0,
+			Max = 15,
+			Default = 5,
+			Increment = 0.5,
+			Flag = "Fust_WallPeek",
+			DependsOn = "Fust_WallManip",
+			Callback = function(v)
+				Exploit.wallManipStuds = v
+			end,
+		})
+		exploitSec:Button({
+			Name = "Exploit + lighting only",
+			Callback = function()
+				Exploit:applyExternalExploitPreset()
+			end,
+		})
+	end
+
 	local trigSec = aimTab:Section({ Name = "Triggerbot", Icon = "mouse-pointer-click", Side = "Right" })
 	trigSec:Toggle({
 		Name = "Enabled",
@@ -449,6 +685,48 @@ return function(deps)
 	visSec:Toggle({ Name = "Outline", Default = true, Flag = "Fust_EspOutline", Callback = function(v)
 		Esp.outline = v
 	end })
+	visSec:Toggle({
+		Name = "Box fill",
+		Default = false,
+		Flag = "Fust_EspFill",
+		DependsOn = "Fust_EspBox",
+		Callback = function(v)
+			Esp.boxFill = v
+		end,
+	})
+	visSec:Slider({
+		Name = "Fill opacity",
+		Min = 0.05,
+		Max = 0.5,
+		Default = 0.14,
+		Increment = 0.01,
+		Flag = "Fust_EspFillA",
+		DependsOn = "Fust_EspFill",
+		Callback = function(v)
+			Esp.boxFillAlpha = v
+		end,
+	})
+	visSec:Slider({
+		Name = "Corner scale",
+		Min = 0.12,
+		Max = 0.45,
+		Default = 0.28,
+		Increment = 0.01,
+		Flag = "Fust_EspCorner",
+		DependsOn = "Fust_EspBox",
+		Callback = function(v)
+			Esp.cornerScale = v
+		end,
+	})
+	visSec:Toggle({ Name = "Tracers", Default = false, Flag = "Fust_EspTrace", Callback = function(v)
+		Esp.tracers = v
+	end })
+	visSec:Toggle({ Name = "Team check", Default = false, Flag = "Fust_EspTeam", Callback = function(v)
+		Esp.teamCheck = v
+	end })
+	visSec:Toggle({ Name = "Distance fade", Default = false, Flag = "Fust_EspFade", Callback = function(v)
+		Esp.distanceFade = v
+	end })
 	visSec:Toggle({ Name = "Name", Default = true, Flag = "Fust_EspName", Callback = function(v)
 		Esp.name = v
 	end })
@@ -490,6 +768,24 @@ return function(deps)
 		DependsOn = "Fust_EspVis",
 		Callback = function(c)
 			Esp.visibleColor = c
+		end,
+	})
+	visSec:ColorPicker({
+		Name = "When hidden",
+		Default = Color3.fromRGB(255, 120, 120),
+		Flag = "Fust_EspHideCol",
+		DependsOn = "Fust_EspVis",
+		Callback = function(c)
+			Esp.hiddenColor = c
+		end,
+	})
+	visSec:Button({
+		Name = "Load external ESP preset",
+		Callback = function()
+			Esp:applyExternalVisualPreset()
+			pcall(function()
+				Prism:Notify({ Title = "ESP", Content = "Corner box + fill + weapon line", Type = "Info", Duration = 3 })
+			end)
 		end,
 	})
 	visSec:Slider({
@@ -631,6 +927,34 @@ return function(deps)
 			World.fontsize = v
 		end,
 	})
+	wMaster:Slider({
+		Name = "Node max distance",
+		Min = 0,
+		Max = 1200,
+		Default = 0,
+		Increment = 25,
+		Flag = "Fust_WorldNodeDist",
+		Callback = function(v)
+			World.nodeMaxDist = v
+		end,
+	})
+	wMaster:Toggle({
+		Name = "Node HP %",
+		Default = false,
+		Flag = "Fust_WorldNodeHp",
+		Callback = function(v)
+			World.showNodeHp = v
+		end,
+	})
+	wMaster:Button({
+		Name = "Load external world ESP",
+		Callback = function()
+			World:applyExternalWorldEspPreset()
+			pcall(function()
+				Prism:Notify({ Title = "World ESP", Content = "Nodes, loot, furnaces, bags", Type = "Info", Duration = 3 })
+			end)
+		end,
+	})
 
 	local function worldToggle(sec, name, flag, key)
 		sec:Toggle({
@@ -660,9 +984,10 @@ return function(deps)
 	worldToggle(wLoot, "Elite crates", "Fust_W_Elite", "elite_crate")
 	worldToggle(wLoot, "Wooden boxes", "Fust_W_Box", "wooden_box")
 	worldToggle(wLoot, "Large boxes", "Fust_W_LBox", "large_box")
-	worldToggle(wLoot, "Backpacks", "Fust_W_Pack", "backpack")
+	worldToggle(wLoot, "Loot bags", "Fust_W_LootBag", "loot_bag")
 	worldToggle(wLoot, "World items", "Fust_W_Item", "world_item")
 	worldToggle(wLoot, "Airdrop", "Fust_W_Air", "airdrop")
+	worldToggle(wLoot, "Arrows", "Fust_W_Arrow", "arrow_pickup")
 
 	local wMobs = worldTab:Section({ Name = "Mobs", Icon = "skull", Side = "Left" })
 	worldToggle(wMobs, "NPCs", "Fust_W_Npc", "npc")
@@ -676,11 +1001,16 @@ return function(deps)
 	worldToggle(wThreat, "Traps", "Fust_W_Trap", "shotgun_trap")
 	worldToggle(wThreat, "Landmines", "Fust_W_Mine", "landmine")
 	worldToggle(wThreat, "Tool cupboard", "Fust_W_TC", "tool_cupboard")
+	worldToggle(wThreat, "Furnaces", "Fust_W_Furnace", "furnace")
+	worldToggle(wThreat, "Campfires", "Fust_W_Fire", "campfire")
+	worldToggle(wThreat, "Sleeping bags", "Fust_W_SleepBag", "sleeping_bag")
+	worldToggle(wThreat, "Workbenches", "Fust_W_Bench", "workbench")
 
 	local wVeh = worldTab:Section({ Name = "Vehicles", Icon = "car", Side = "Left" })
 	worldToggle(wVeh, "ATV", "Fust_W_Atv", "atv")
 	worldToggle(wVeh, "Minicopter", "Fust_W_Heli", "minicopter")
 	worldToggle(wVeh, "Patrol heli", "Fust_W_Patrol", "patrol_heli")
+	worldToggle(wVeh, "Boats", "Fust_W_Boat", "boat")
 
 	----------------------------------------------------------------------
 	-- Tab: Misc (farm / combat / movement / guns)
@@ -852,6 +1182,58 @@ return function(deps)
 			end
 		end,
 	})
+	gunSec:Toggle({
+		Name = "No recoil",
+		Default = false,
+		Risky = true,
+		Flag = "Fust_NoRecoil",
+		Callback = function(v)
+			if Misc then
+				Misc.noRecoil = v
+				Misc:syncRecoilMods()
+			end
+		end,
+	})
+	gunSec:Toggle({
+		Name = "No spread",
+		Default = false,
+		Risky = true,
+		Flag = "Fust_NoSpread",
+		Callback = function(v)
+			if Misc then
+				Misc.noSpread = v
+				Misc:syncRecoilMods()
+			end
+		end,
+	})
+	gunSec:Slider({
+		Name = "Recoil amount",
+		Min = 0,
+		Max = 100,
+		Default = 100,
+		Increment = 5,
+		Flag = "Fust_RecoilAmt",
+		Callback = function(v)
+			if Misc then
+				Misc.recoilScale = v / 100
+				Misc:syncRecoilMods()
+			end
+		end,
+	})
+	gunSec:Slider({
+		Name = "Spread amount",
+		Min = 0,
+		Max = 100,
+		Default = 100,
+		Increment = 5,
+		Flag = "Fust_SpreadAmt",
+		Callback = function(v)
+			if Misc then
+				Misc.spreadScale = v / 100
+				Misc:syncRecoilMods()
+			end
+		end,
+	})
 
 	local bowModSec = miscTab:Section({ Name = "Bow mods", Icon = "target", Side = "Right" })
 	bowModSec:Toggle({
@@ -986,6 +1368,112 @@ return function(deps)
 		end,
 	})
 
+	local lightSec = worldTab:Section({ Name = "Custom lighting", Icon = "sun", Side = "Right" })
+	lightSec:Label({ Text = "Matches external.wtf time/brightness — FustSky ACM may flag." })
+	lightSec:Toggle({
+		Name = "Enabled",
+		Default = false,
+		Risky = true,
+		Flag = "Fust_CustomLight",
+		Callback = function(v)
+			World.customLight = v
+			World:syncCustomLight()
+		end,
+	})
+	lightSec:Slider({
+		Name = "Brightness",
+		Min = 0,
+		Max = 5,
+		Default = 2,
+		Increment = 0.05,
+		Flag = "Fust_LightBright",
+		DependsOn = "Fust_CustomLight",
+		Callback = function(v)
+			World.lightBrightness = v
+			if World.customLight then
+				World:syncCustomLight()
+			end
+		end,
+	})
+	lightSec:Slider({
+		Name = "Time of day",
+		Min = 0,
+		Max = 24,
+		Default = 14,
+		Increment = 0.25,
+		Flag = "Fust_LightTime",
+		DependsOn = "Fust_CustomLight",
+		Callback = function(v)
+			World.lightClock = v
+			if World.customLight then
+				World:syncCustomLight()
+			end
+		end,
+	})
+	lightSec:Slider({
+		Name = "Exposure",
+		Min = -1,
+		Max = 2,
+		Default = 0,
+		Increment = 0.05,
+		Flag = "Fust_LightExp",
+		DependsOn = "Fust_CustomLight",
+		Callback = function(v)
+			World.lightExposure = v
+			if World.customLight then
+				World:syncCustomLight()
+			end
+		end,
+	})
+	lightSec:Slider({
+		Name = "Contrast",
+		Min = -1,
+		Max = 1,
+		Default = 0,
+		Increment = 0.05,
+		Flag = "Fust_LightContrast",
+		DependsOn = "Fust_CustomLight",
+		Callback = function(v)
+			World.lightContrast = v
+			if World.customLight then
+				World:syncCustomLight()
+			end
+		end,
+	})
+	lightSec:Toggle({
+		Name = "No fog",
+		Default = false,
+		Flag = "Fust_NoFog",
+		DependsOn = "Fust_CustomLight",
+		Callback = function(v)
+			World.noFog = v
+			if World.customLight then
+				World:syncCustomLight()
+			end
+		end,
+	})
+	lightSec:ColorPicker({
+		Name = "Ambience",
+		Default = Color3.fromRGB(140, 140, 160),
+		Flag = "Fust_LightAmb",
+		DependsOn = "Fust_CustomLight",
+		Callback = function(c)
+			World.lightAmbient = c
+			if World.customLight then
+				World:syncCustomLight()
+			end
+		end,
+	})
+	lightSec:Button({
+		Name = "external.wtf preset",
+		Callback = function()
+			World:applyExternalLightPreset()
+			pcall(function()
+				Prism:Notify({ Title = "Lighting", Content = "Brightness 2 · time 14", Type = "Warning", Duration = 3 })
+			end)
+		end,
+	})
+
 	----------------------------------------------------------------------
 	-- Tab: Camera
 	----------------------------------------------------------------------
@@ -1090,7 +1578,8 @@ return function(deps)
 	Aim.silentFovPx = 220
 	Aim.prediction = true
 	Aim.bulletSpeed = 900
-	Aim.instantAim = false
+	Aim:setHitscan(false)
+	Aim.manip = false
 	Aim.bowPrediction = false
 	Aim.bowSpeed = 280
 	Aim.bowGravity = true
@@ -1098,6 +1587,12 @@ return function(deps)
 	local RISKY_FLAGS = {
 		"Fust_AimOn",
 		"Fust_SilentOn",
+		"Fust_Manip",
+		"Fust_ManipHud",
+		"Fust_CombatTrace",
+		"Fust_HitEdge",
+		"Fust_HitMulti",
+		"Fust_HitLimbs",
 		"Fust_TrigOn",
 		"Fust_Battle",
 		"Fust_AimKey1",
@@ -1110,6 +1605,12 @@ return function(deps)
 		"Fust_WallClimb",
 		"Fust_GunAuto",
 		"Fust_GunRapid",
+		"Fust_NoRecoil",
+		"Fust_NoSpread",
+		"Fust_CustomLight",
+		"Fust_TrueSilent",
+		"Fust_WallManip",
+		"Fust_SwingHook",
 		"Fust_BowMods",
 		"Fust_Freecam",
 		"Fust_Tp3",
@@ -1127,6 +1628,10 @@ return function(deps)
 		Aim.aimbotEnabled = false
 		Aim.lockAssist = false
 		Aim.silentOn = false
+		Aim.manip = false
+		Aim.showManipHud = false
+		Aim.combatTracers = false
+		Aim.hitScanEdgeAim = false
 		Aim.triggerEnabled = false
 		Aim.battleMode = false
 		Aim.aimKey1Held = false
@@ -1149,7 +1654,19 @@ return function(deps)
 			World.freecamOn = false
 			World.tp3On = false
 			World.zoomHeld = false
+			World.customLight = false
 			World:sync()
+		end
+		if Misc then
+			Misc.noRecoil = false
+			Misc.noSpread = false
+			Misc:syncRecoilMods()
+		end
+		if Exploit then
+			Exploit.trueSilent = false
+			Exploit.wallManip = false
+			Exploit.swingRedirect = false
+			Exploit:syncHook()
 		end
 		pcall(function()
 			Prism:Notify({
@@ -1528,6 +2045,23 @@ return function(deps)
 	end)
 
 	local safeSec = setTab:Section({ Name = "Safety", Icon = "shield", Side = "Right" })
+	if Presets and Presets.applyExternalFull then
+		safeSec:Button({
+			Name = "external.wtf — LOAD EVERYTHING",
+			Icon = "zap",
+			Callback = function()
+				Presets:applyExternalFull()
+				pcall(function()
+					Prism:Notify({
+						Title = "Full stack",
+						Content = "ESP + aim + world + guns + true silent + lighting",
+						Type = "Warning",
+						Duration = 5,
+					})
+				end)
+			end,
+		})
+	end
 	safeSec:Button({
 		Name = "Panic",
 		Icon = "shield-off",
@@ -1576,6 +2110,9 @@ return function(deps)
 
 	local bundle = {}
 	function bundle.destroy()
+		if Exploit then
+			Exploit:destroy()
+		end
 		Aim:destroy()
 		Esp:destroy()
 		if Misc then
@@ -1598,6 +2135,9 @@ return function(deps)
 	bundle.Aim = Aim
 	bundle.World = World
 	bundle.Misc = Misc
+	bundle.Exploit = Exploit
+	bundle.Presets = Presets
+	bundle.applyExternalFull = Presets and Presets.applyExternalFull
 	bundle.panic = panic
 	return bundle
 end

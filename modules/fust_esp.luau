@@ -74,6 +74,13 @@ return function(deps)
 		rate = 30,
 		box = true,
 		boxStyle = "Full",
+		boxFill = false,
+		boxFillAlpha = 0.14,
+		cornerScale = 0.28,
+		tracers = false,
+		distanceFade = false,
+		teamCheck = false,
+		hiddenColor = Color3.fromRGB(255, 120, 120),
 		outline = true,
 		skeleton = true,
 		joints = true,
@@ -184,10 +191,17 @@ return function(deps)
 		if s then
 			return s
 		end
-		s = { box = {}, boxOut = {}, bones = {}, boneOut = {}, joints = {}, pts = {}, jdone = {}, segs = {} }
+		s = { box = {}, boxOut = {}, boxFill = nil, tracer = nil, tracerOut = nil, bones = {}, boneOut = {}, joints = {}, pts = {}, jdone = {}, segs = {} }
 		for k = 1, 8 do
 			s.segs[k] = { 0, 0, 0, 0 }
 		end
+		s.boxFill = makeFrame(2)
+		s.boxFill.f.BackgroundTransparency = 1 - Esp.boxFillAlpha
+		s.boxFill.f.AnchorPoint = Vector2.new(0.5, 0.5)
+		s.boxFill.f.ZIndex = 2
+		s.tracer = makeFrame(3)
+		s.tracerOut = makeFrame(1)
+		s.tracerOut.f.BackgroundTransparency = 0.5
 		for k = 1, 8 do
 			s.boxOut[k] = makeFrame(1)
 			s.box[k] = makeFrame(3)
@@ -229,6 +243,15 @@ return function(deps)
 		setVis(s.barFill, false)
 		setVis(s.label, false)
 		setVis(s.heldLabel, false)
+		if s.boxFill then
+			setVis(s.boxFill, false)
+		end
+		if s.tracer then
+			setVis(s.tracer, false)
+		end
+		if s.tracerOut then
+			setVis(s.tracerOut, false)
+		end
 	end
 
 	local function hideAll()
@@ -257,19 +280,40 @@ return function(deps)
 		setVis(r, true)
 	end
 
-	-- Parts for a character, looked up once and kept until one goes missing.
+	-- Resolve character: Player.Character, else workspace.<Name> (Fust places rigs there).
+	local function charOf(plr)
+		local char = plr.Character
+		if char and char.Parent then
+			return char
+		end
+		local byName = workspace:FindFirstChild(plr.Name)
+		if byName and byName:IsA("Model") and byName:FindFirstChildOfClass("Humanoid") then
+			return byName
+		end
+		return nil
+	end
+
+	-- Parts for a character, kept until incomplete/stale (joiners often cache before Head streams).
 	local function partsFor(char)
 		local c = partCache[char]
 		if c then
-			for _, p in pairs(c.parts) do
-				if not p.Parent then
-					c = nil
-					break
+			local ok = c.head and c.head.Parent and c.root and c.root.Parent
+			if ok then
+				for _, p in pairs(c.parts) do
+					if not p.Parent then
+						ok = false
+						break
+					end
 				end
 			end
-		end
-		if c then
-			return c
+			-- First scan may miss UpperTorso and lock an empty "R6" cache.
+			if ok and not c.r15 and char:FindFirstChild("UpperTorso") then
+				ok = false
+			end
+			if ok then
+				return c
+			end
+			partCache[char] = nil
 		end
 		local parts = {}
 		local r15 = char:FindFirstChild("UpperTorso") ~= nil
@@ -279,9 +323,23 @@ return function(deps)
 				parts[n] = p
 			end
 		end
-		c = { parts = parts, r15 = r15, head = char:FindFirstChild("Head"), root = char:FindFirstChild("HumanoidRootPart") }
+		local head = char:FindFirstChild("Head")
+		local root = char:FindFirstChild("HumanoidRootPart")
+		-- Don't freeze a headless cache — rebuild next scan until Head exists.
+		if not head or not root then
+			return { parts = parts, r15 = r15, head = head, root = root }
+		end
+		c = { parts = parts, r15 = r15, head = head, root = root }
 		partCache[char] = c
 		return c
+	end
+
+	local function sameTeam(plr)
+		local lt, tt = LOCAL.Team, plr.Team
+		if not lt or not tt or lt.Neutral or tt.Neutral then
+			return false
+		end
+		return lt == tt
 	end
 
 	local function pickTargets(origin)
@@ -291,8 +349,8 @@ return function(deps)
 			local players = Players:GetPlayers()
 			for i = 1, #players do
 				local plr = players[i]
-				if plr ~= LOCAL then
-					local char = plr.Character
+				if plr ~= LOCAL and not (Esp.teamCheck and sameTeam(plr)) then
+					local char = charOf(plr)
 					local hum = char and char:FindFirstChildOfClass("Humanoid")
 					local root = char and char:FindFirstChild("HumanoidRootPart")
 					if hum and root and hum.Health > 0 then
@@ -327,7 +385,17 @@ return function(deps)
 
 	local function shouldRun()
 		return Esp.master
-			and (Esp.box or Esp.skeleton or Esp.name or Esp.distance or Esp.held or Esp.armor or Esp.healthBar or Esp.healthText)
+			and (
+				Esp.box
+				or Esp.skeleton
+				or Esp.name
+				or Esp.distance
+				or Esp.held
+				or Esp.armor
+				or Esp.healthBar
+				or Esp.healthText
+				or Esp.tracers
+			)
 	end
 
 	-- Tool.Name is already the display name (knowledge.md). Optional WSkin suffix.
@@ -430,7 +498,8 @@ return function(deps)
 		local q = s.segs
 		local n
 		if Esp.boxStyle == "Corners" then
-			local cw, ch = (x1 - x0) * 0.28, (y1 - y0) * 0.22
+			local scale = math.clamp(Esp.cornerScale or 0.28, 0.12, 0.45)
+			local cw, ch = (x1 - x0) * scale, (y1 - y0) * (scale * 0.78)
 			setSeg(q[1], x0, y0, x0 + cw, y0)
 			setSeg(q[2], x0, y0, x0, y0 + ch)
 			setSeg(q[3], x1, y0, x1 - cw, y0)
@@ -565,8 +634,13 @@ return function(deps)
 				hideSlot(s)
 			else
 				local color = baseColor
-				if checkVis and isVisible(camPos, head.Position, t.char) then
-					color = visColor
+				local visible = not checkVis or isVisible(camPos, head.Position, t.char)
+				if checkVis then
+					color = visible and visColor or Esp.hiddenColor
+				end
+				local fade = 1
+				if Esp.distanceFade and Esp.maxDist > 120 then
+					fade = math.clamp(1 - (t.dist - 80) / (Esp.maxDist - 80), 0.35, 1)
 				end
 				local y0, y1 = math.min(top.Y, bottom.Y), math.max(top.Y, bottom.Y)
 				local h = math.max(y1 - y0, 14)
@@ -577,10 +651,35 @@ return function(deps)
 				local thick = Esp.thickness * (t.dist < 120 and 1.35 or 1)
 
 				if Esp.box then
+					if Esp.boxFill and s.boxFill then
+						setColor(s.boxFill, color)
+						s.boxFill.f.BackgroundTransparency = 1 - (Esp.boxFillAlpha or 0.14) * fade
+						setRect(s.boxFill, (x0 + x1) * 0.5, (y0 + y1) * 0.5, x1 - x0, y1 - y0)
+						setVis(s.boxFill, true)
+					elseif s.boxFill then
+						setVis(s.boxFill, false)
+					end
 					drawBox(s, x0, y0, x1, y1, color, thick)
 				else
 					hideList(s.box)
 					hideList(s.boxOut)
+					if s.boxFill then
+						setVis(s.boxFill, false)
+					end
+				end
+
+				if Esp.tracers and s.tracer then
+					local fromX, fromY = vp.X * 0.5, vp.Y
+					local tthick = math.max(Esp.thickness, 1)
+					seg(s.tracer, fromX, fromY, cx, y1, color, tthick)
+					if Esp.outline then
+						seg(s.tracerOut, fromX, fromY, cx, y1, OUTLINE_COLOR, tthick + 1)
+					else
+						setVis(s.tracerOut, false)
+					end
+				elseif s.tracer then
+					setVis(s.tracer, false)
+					setVis(s.tracerOut, false)
 				end
 
 				if Esp.skeleton and t.dist <= Esp.skelDist then
@@ -629,6 +728,11 @@ return function(deps)
 					if lab.col ~= color then
 						lab.col = color
 						lab.f.TextColor3 = color
+					end
+					local tTrans = 0.35 + (1 - fade) * 0.45
+					if lab.tt ~= tTrans then
+						lab.tt = tTrans
+						lab.f.TextTransparency = tTrans
 					end
 					local size = t.dist > 600 and 12 or 13
 					if lab.ts ~= size then
@@ -770,6 +874,26 @@ return function(deps)
 
 	function Esp:cleanupBeforeLoad()
 		cleanupOverlayGui()
+	end
+
+	function Esp:applyExternalVisualPreset()
+		self.master = true
+		self.box = true
+		self.boxStyle = "Corners"
+		self.boxFill = true
+		self.boxFillAlpha = 0.14
+		self.cornerScale = 0.28
+		self.skeleton = true
+		self.name = true
+		self.distance = true
+		self.held = true
+		self.healthBar = true
+		self.healthText = true
+		self.teamCheck = true
+		self.tracers = false
+		self.distanceFade = false
+		self.maxDist = 5000
+		self:setMaster(true)
 	end
 
 	Esp.MAX_SLOTS = MAX_SLOTS

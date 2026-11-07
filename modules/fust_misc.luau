@@ -60,12 +60,18 @@ return function(deps)
 		_wallLastJump = 0,
 		_wallConn = nil,
 
-		-- Vault gunMods (input-only — no GunControl hooks)
+		-- Gun mods: input + viewmodel kick zero (filtergc), not GunControl hooks
 		gunAuto = false,
 		gunRapid = false,
 		gunRapidRate = 0.08,
 		_gunConn = nil,
 		_gunLast = 0,
+
+		noRecoil = false,
+		noSpread = false,
+		recoilScale = 1,
+		spreadScale = 1,
+		_recoilConn = nil,
 
 		-- Vault bowMods (input-side; infAmmo/true noGravity need hooks — not spoofed)
 		bowEnabled = false,
@@ -417,6 +423,65 @@ return function(deps)
 				hrp.AssemblyLinearVelocity.Z
 			)
 			hrp.CFrame = hrp.CFrame + Vector3.new(0, self.wallClimbSpeed * dt * 0.35, 0)
+		end)
+	end
+
+	local function zeroGunKick(state, recoilMul, spreadMul)
+		if not state or type(state) ~= "table" then
+			return
+		end
+		if recoilMul ~= nil then
+			local m = math.clamp(recoilMul, 0, 2)
+			if m <= 0 then
+				if state.kickV ~= nil then state.kickV = 0 end
+				if state.kickRoll ~= nil then state.kickRoll = 0 end
+				if state.kickPitch ~= nil then state.kickPitch = 0 end
+				if state.kickBack ~= nil then state.kickBack = 0 end
+				if state.kick ~= nil then state.kick = 0 end
+				if state.recoil ~= nil then state.recoil = 0 end
+				if state.recoilYaw ~= nil then state.recoilYaw = 0 end
+				if state.RecoilPend ~= nil then state.RecoilPend = 0 end
+				if state.BoltKick ~= nil then state.BoltKick = 0 end
+				if state.shakeStrength ~= nil then state.shakeStrength = 0 end
+			else
+				if state.kickPitch ~= nil then state.kickPitch = (state.kickPitch or 0) * m end
+				if state.kickBack ~= nil then state.kickBack = (state.kickBack or 0) * m end
+				if state.recoil ~= nil then state.recoil = (state.recoil or 0) * m end
+				if state.recoilYaw ~= nil then state.recoilYaw = (state.recoilYaw or 0) * m end
+			end
+		end
+		if spreadMul ~= nil then
+			local s = math.clamp(spreadMul, 0, 2)
+			if state.SpreadPx ~= nil then
+				state.SpreadPx = (state.SpreadPx or 0) * s
+			end
+		end
+	end
+
+	function Misc:syncRecoilMods()
+		if self._recoilConn then
+			self._recoilConn:Disconnect()
+			self._recoilConn = nil
+		end
+		if not (self.noRecoil or self.noSpread or self.recoilScale < 0.99 or self.spreadScale < 0.99) then
+			return
+		end
+		local recoilMul = self.noRecoil and 0 or math.clamp(self.recoilScale, 0, 2)
+		local spreadMul = self.noSpread and 0 or math.clamp(self.spreadScale, 0, 2)
+		self._recoilConn = RunService.RenderStepped:Connect(function()
+			if not (self.noRecoil or self.noSpread or self.recoilScale < 0.99 or self.spreadScale < 0.99) then
+				return
+			end
+			if filtergc then
+				local gun = filtergc("table", { Keys = { "kickV", "SpreadPx" } }, true)
+				if gun then
+					zeroGunKick(gun, recoilMul, spreadMul)
+				end
+				local gather = filtergc("table", { Keys = { "kickV", "kickRoll" } }, true)
+				if gather and gather ~= gun then
+					zeroGunKick(gather, recoilMul, nil)
+				end
+			end
 		end)
 	end
 
@@ -777,6 +842,7 @@ return function(deps)
 		self:syncHitbox()
 		self:syncWallClimb()
 		self:syncGunMods()
+		self:syncRecoilMods()
 		self:syncBowMods()
 		self:syncInv()
 		self:syncTargetInfo()
@@ -804,6 +870,8 @@ return function(deps)
 		self.wallClimbEnabled = false
 		self.gunAuto = false
 		self.gunRapid = false
+		self.noRecoil = false
+		self.noSpread = false
 		self.bowEnabled = false
 		self.autoWeak = false
 		self.invViewer = false
@@ -827,6 +895,10 @@ return function(deps)
 		if self._gunConn then
 			self._gunConn:Disconnect()
 			self._gunConn = nil
+		end
+		if self._recoilConn then
+			self._recoilConn:Disconnect()
+			self._recoilConn = nil
 		end
 		if self._bowConn then
 			self._bowConn:Disconnect()
