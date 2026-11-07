@@ -20,7 +20,7 @@ Design goal: **feature parity with external.wtf-class menus** (Drawing ESP/FOV, 
 | `modules/fust_esp.luau` | Player ESP — **Drawing** primary, PlayerGui fallback |
 | `modules/fust_aim.luau` | Aimbot, hitscan/manip HUD, combat tracers, **Drawing FOV** |
 | `modules/fust_world.luau` | World ESP (PlayerGui), custom lighting, freecam/tp3/zoom |
-| `modules/fust_misc.luau` | No recoil/spread (filtergc gun table), gun auto/rapid, hitbox, speed, farm/kill |
+| `modules/fust_misc.luau` | No recoil/spread, gun auto/rapid, hitbox, speed, **noclip**, farm/kill |
 | `modules/fust_exploit.luau` | **True silent** (`Shoot` dir/origin), wall manip, `Swing` redirect (`__namecall`) |
 | `modules/fust_presets.luau` | `Presets:applyExternalFull()` — one-shot external stack |
 | `modules/fust_shell.luau` | **UI only** — wires modules, panic, configs |
@@ -106,6 +106,12 @@ These are **off limits** when scripting against the live game. Violating them br
 - **Awareness:** facing line (head `LookVector` × `lookLength`), status tags, aimed-at warning (ADS + head look within `aimCone`° of you → red box + screen banner), off-screen arrows (Drawing `Triangle`, `offscreenRadius`)
 - Health bar is a Drawing `Square` in Drawing mode (was a Frame with no ScreenGui, so it never showed)
 
+### Prism UI (`prism_ui.luau`)
+
+- Default menu key **LeftAlt** (`CreateWindow{ ToggleKey }` overrides).
+- `Window:KeybindsSection(tab, { Side })` — menu key + every toggle with a key (mirrored both ways), "Show all toggles", "Clear all keybinds", keybind list overlay. Call it **after** all tabs are built (shell does, in Settings).
+- Per-frame tickers (shine, aurora, border) pause while every window is closed; shine / tab indicator only write when something moved; `DependsOn` checks pause while the menu is closed and run once on open.
+
 ### Aim (`fust_aim.luau`)
 
 - Camera + mouse lock; hitscan skips lead.  
@@ -159,4 +165,4 @@ Commit only when user asks. Use per-commit `-c user.name=ImWozzie -c user.email=
 - [ ] `BUNDLE_VERSION` bumped  
 - [ ] Copy to push repo + push when requested  
 
-Last aligned: **v2.17.0** — Drawing ESP/FOV, external presets, exploit stack.
+Last aligned: **v2.18.0** — Drawing ESP/FOV, external presets, exploit stack.
